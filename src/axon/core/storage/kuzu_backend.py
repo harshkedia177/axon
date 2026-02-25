@@ -663,17 +663,32 @@ class KuzuBackend:
         falling back to individual inserts if COPY FROM fails.
         """
         assert self._conn is not None
+        # ERR-2: Log delete failures instead of silently passing.
         for table in _NODE_TABLE_NAMES:
             try:
                 self._conn.execute(f"MATCH (n:{table}) DETACH DELETE n")
             except Exception:
-                pass
+                logger.warning(
+                    "Failed to clear table %s during bulk_load", table, exc_info=True
+                )
 
-        if not self._bulk_load_nodes_csv(graph):
-            self.add_nodes(list(graph.iter_nodes()))
+        try:
+            if not self._bulk_load_nodes_csv(graph):
+                self.add_nodes(list(graph.iter_nodes()))
 
-        if not self._bulk_load_rels_csv(graph):
-            self.add_relationships(list(graph.iter_relationships()))
+            if not self._bulk_load_rels_csv(graph):
+                self.add_relationships(list(graph.iter_relationships()))
+        except Exception:
+            # ERR-2: If bulk load fails after delete, attempt recovery via individual inserts.
+            logger.error(
+                "Bulk load failed, attempting individual insert recovery", exc_info=True
+            )
+            try:
+                self.add_nodes(list(graph.iter_nodes()))
+                self.add_relationships(list(graph.iter_relationships()))
+            except Exception:
+                logger.error("Recovery insert also failed", exc_info=True)
+                raise
 
         self.rebuild_fts_indexes()
 

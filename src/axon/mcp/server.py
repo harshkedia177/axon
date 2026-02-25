@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
+from dataclasses import dataclass
 from pathlib import Path
 
 from mcp.server import Server
@@ -41,20 +43,33 @@ logger = logging.getLogger(__name__)
 
 server = Server("axon")
 
-_storage: KuzuBackend | None = None
-_lock: asyncio.Lock | None = None
+# RACE-3: Group mutable server state into a single dataclass instead of
+# scattered module-level globals.  This eliminates the need for `global`
+# statements and makes the mutation surface explicit and easy to reason about.
+@dataclass
+class _ServerState:
+    """Mutable state for the MCP server instance."""
+
+    storage: KuzuBackend | None = None
+    lock: asyncio.Lock | None = None
+
+
+_state = _ServerState()
+
+# AUTH-1: Simple sliding-window rate limiter for tool calls.
+_RATE_LIMIT = 200       # max requests per window
+_RATE_WINDOW = 60.0     # window size in seconds
+_request_times: list[float] = []
 
 
 def set_storage(storage: KuzuBackend) -> None:
     """Inject a pre-initialised storage backend (e.g. from ``axon serve --watch``)."""
-    global _storage  # noqa: PLW0603
-    _storage = storage
+    _state.storage = storage
 
 
 def set_lock(lock: asyncio.Lock) -> None:
     """Inject a shared lock for coordinating storage access with the file watcher."""
-    global _lock  # noqa: PLW0603
-    _lock = lock
+    _state.lock = lock
 
 
 def _get_storage() -> KuzuBackend:
@@ -65,16 +80,15 @@ def _get_storage() -> KuzuBackend:
     bare (uninitialised) backend is returned so that tools can still be
     called without crashing.
     """
-    global _storage  # noqa: PLW0603
-    if _storage is None:
-        _storage = KuzuBackend()
+    if _state.storage is None:
+        _state.storage = KuzuBackend()
         db_path = Path.cwd() / ".axon" / "kuzu"
         if db_path.exists():
-            _storage.initialize(db_path, read_only=True)
+            _state.storage.initialize(db_path, read_only=True)
             logger.info("Initialised storage (read-only) from %s", db_path)
         else:
             logger.warning("No .axon/kuzu directory found in %s", Path.cwd())
-    return _storage
+    return _state.storage
 
 TOOLS: list[Tool] = [
     Tool(
@@ -233,10 +247,18 @@ def _dispatch_tool(name: str, arguments: dict, storage: KuzuBackend) -> str:
 @server.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     """Dispatch a tool call to the appropriate handler."""
+    # AUTH-1: Rate limit check (sliding window).
+    now = time.monotonic()
+    while _request_times and _request_times[0] <= now - _RATE_WINDOW:
+        _request_times.pop(0)
+    if len(_request_times) >= _RATE_LIMIT:
+        return [TextContent(type="text", text="Rate limit exceeded. Try again shortly.")]
+    _request_times.append(now)
+
     storage = _get_storage()
 
-    if _lock is not None:
-        async with _lock:
+    if _state.lock is not None:
+        async with _state.lock:
             result = await asyncio.to_thread(_dispatch_tool, name, arguments, storage)
     else:
         result = _dispatch_tool(name, arguments, storage)
@@ -284,8 +306,8 @@ async def read_resource(uri) -> str:
     storage = _get_storage()
     uri_str = str(uri)
 
-    if _lock is not None:
-        async with _lock:
+    if _state.lock is not None:
+        async with _state.lock:
             return await asyncio.to_thread(_dispatch_resource, uri_str, storage)
     return _dispatch_resource(uri_str, storage)
 

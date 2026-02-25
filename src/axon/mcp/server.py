@@ -193,8 +193,25 @@ async def list_tools() -> list[Tool]:
     """Return the list of available Axon tools."""
     return TOOLS
 
+MAX_LIMIT = 200
+MAX_INPUT_LENGTH = 100_000  # 100 KB
+
+
 def _dispatch_tool(name: str, arguments: dict, storage: KuzuBackend) -> str:
     """Synchronous tool dispatch — called directly or via ``asyncio.to_thread``."""
+    # AUTH-2: Cap input sizes to prevent resource exhaustion.
+    if "limit" in arguments:
+        try:
+            arguments["limit"] = max(1, min(int(arguments["limit"]), MAX_LIMIT))
+        except (TypeError, ValueError):
+            arguments["limit"] = 20
+    if "query" in arguments and isinstance(arguments["query"], str):
+        if len(arguments["query"]) > MAX_INPUT_LENGTH:
+            return "Query too long. Maximum length is 100,000 characters."
+    if "diff" in arguments and isinstance(arguments["diff"], str):
+        if len(arguments["diff"]) > MAX_INPUT_LENGTH:
+            return "Diff too long. Maximum length is 100,000 characters."
+
     if name == "axon_list_repos":
         return handle_list_repos()
     elif name == "axon_query":

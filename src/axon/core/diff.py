@@ -8,6 +8,7 @@ switching in the user's working tree.
 from __future__ import annotations
 
 import logging
+import re
 import subprocess
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
@@ -17,6 +18,9 @@ from pathlib import Path
 from axon.core.graph.model import GraphNode, GraphRelationship
 
 logger = logging.getLogger(__name__)
+
+# INJ-6: Allowlist pattern for git ref names to prevent argument injection
+_SAFE_REF_RE = re.compile(r"^[a-zA-Z0-9_/\-\.]+$")
 
 @dataclass
 class StructuralDiff:
@@ -148,6 +152,10 @@ def diff_branches(
 
 def _build_graph_for_ref(repo_path: Path, ref: str) -> "KnowledgeGraph":
     """Build an in-memory graph for a git ref using a temporary worktree."""
+    # INJ-6: Validate git ref to prevent argument injection
+    if not ref or ref.startswith("-") or not _SAFE_REF_RE.match(ref):
+        raise ValueError(f"Invalid git ref: {ref!r}")
+
     from axon.core.graph.graph import KnowledgeGraph
     from axon.core.ingestion.pipeline import build_graph
 
@@ -156,7 +164,7 @@ def _build_graph_for_ref(repo_path: Path, ref: str) -> "KnowledgeGraph":
 
         try:
             subprocess.run(
-                ["git", "worktree", "add", str(worktree_path), ref],
+                ["git", "worktree", "add", str(worktree_path), "--", ref],
                 cwd=repo_path,
                 capture_output=True,
                 text=True,

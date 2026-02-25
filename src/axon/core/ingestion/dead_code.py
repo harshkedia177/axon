@@ -21,7 +21,15 @@ _SYMBOL_LABELS: tuple[NodeLabel, ...] = (
     NodeLabel.CLASS,
 )
 
-_CONSTRUCTOR_NAMES: frozenset[str] = frozenset({"__init__", "__new__"})
+_CONSTRUCTOR_NAMES: frozenset[str] = frozenset({"__init__", "__new__", "__construct"})
+
+# PHP magic methods that are invoked implicitly by the runtime.
+_PHP_MAGIC_METHODS: frozenset[str] = frozenset({
+    "__construct", "__destruct", "__call", "__callStatic", "__get",
+    "__set", "__isset", "__unset", "__sleep", "__wakeup", "__serialize",
+    "__unserialize", "__toString", "__invoke", "__set_state", "__clone",
+    "__debugInfo",
+})
 
 def _is_test_class(name: str) -> bool:
     """Return ``True`` if *name* follows pytest class convention (``Test*``).
@@ -143,6 +151,7 @@ def _is_exempt(
         is_entry_point
         or is_exported
         or name in _CONSTRUCTOR_NAMES
+        or name in _PHP_MAGIC_METHODS
         or name.startswith("test_")
         or _is_test_class(name)
         or _is_test_file(file_path)

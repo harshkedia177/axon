@@ -170,7 +170,7 @@ class TestRelationshipTypes:
         self, sample_repo: Path, storage: KuzuBackend, pipeline_result: PipelineResult
     ) -> None:
         # CONTAINS: folder -> file
-        rows = storage.execute_raw(
+        rows = storage.execute_read_query(
             "MATCH ()-[r:CodeRelation]->() "
             "WHERE r.rel_type = 'contains' "
             "RETURN count(r)"
@@ -180,7 +180,7 @@ class TestRelationshipTypes:
     def test_defines_exist(
         self, sample_repo: Path, storage: KuzuBackend, pipeline_result: PipelineResult
     ) -> None:
-        rows = storage.execute_raw(
+        rows = storage.execute_read_query(
             "MATCH ()-[r:CodeRelation]->() "
             "WHERE r.rel_type = 'defines' "
             "RETURN count(r)"
@@ -190,7 +190,7 @@ class TestRelationshipTypes:
     def test_imports_exist(
         self, sample_repo: Path, storage: KuzuBackend, pipeline_result: PipelineResult
     ) -> None:
-        rows = storage.execute_raw(
+        rows = storage.execute_read_query(
             "MATCH ()-[r:CodeRelation]->() "
             "WHERE r.rel_type = 'imports' "
             "RETURN count(r)"
@@ -200,7 +200,7 @@ class TestRelationshipTypes:
     def test_calls_exist(
         self, sample_repo: Path, storage: KuzuBackend, pipeline_result: PipelineResult
     ) -> None:
-        rows = storage.execute_raw(
+        rows = storage.execute_read_query(
             "MATCH ()-[r:CodeRelation]->() "
             "WHERE r.rel_type = 'calls' "
             "RETURN count(r)"

@@ -11,6 +11,8 @@ from __future__ import annotations
 import csv
 import hashlib
 import logging
+import numbers
+import re
 import tempfile
 from collections import deque
 from pathlib import Path
@@ -63,9 +65,15 @@ _REL_PROPERTIES = (
     "symbols STRING"
 )
 
-def _escape(value: str) -> str:
-    """Escape a string for safe inclusion in a Cypher literal."""
-    return value.replace("\\", "\\\\").replace("'", "\\'")
+# INJ-2: Strict allowlist sanitizer for search queries.
+# Only alphanumeric, underscore, whitespace, hyphen, and dot are allowed.
+_SAFE_SEARCH_RE = re.compile(r"[^a-zA-Z0-9_\s\-\.]")
+
+
+def _sanitize_search_query(query: str) -> str:
+    """Strip all characters except safe search chars."""
+    return _SAFE_SEARCH_RE.sub("", query).strip()
+
 
 def _table_for_id(node_id: str) -> str | None:
     """Extract the table name from a node ID by mapping its label prefix."""
@@ -312,14 +320,61 @@ class KuzuBackend:
             logger.debug("get_process_memberships failed", exc_info=True)
         return mapping
 
-    def execute_raw(self, query: str) -> list[list[Any]]:
-        """Execute a raw Cypher query and return all result rows."""
+    # INJ-3: Renamed from execute_raw to _execute_raw (private).
+    def _execute_raw(self, query: str) -> list[list[Any]]:
+        """Execute a raw Cypher query and return all result rows.
+
+        This is a private method. External callers should use
+        :meth:`execute_read_query` which supports parameterized queries.
+        """
         assert self._conn is not None
         result = self._conn.execute(query)
         rows: list[list[Any]] = []
         while result.has_next():
             rows.append(result.get_next())
         return rows
+
+    def execute_read_query(
+        self, query: str, parameters: dict[str, Any] | None = None
+    ) -> list[list[Any]]:
+        """Execute a Cypher query with optional parameters and return all rows.
+
+        This is the public interface for running read queries. Prefer
+        parameterized queries (via the *parameters* dict) over string
+        interpolation to prevent injection.
+        """
+        assert self._conn is not None
+        result = self._conn.execute(query, parameters=parameters or {})
+        rows: list[list[Any]] = []
+        while result.has_next():
+            rows.append(result.get_next())
+        return rows
+
+    def query_symbols_by_file(self, file_path: str) -> list[list[Any]]:
+        """Return symbols from all searchable tables matching *file_path*.
+
+        Uses parameterized queries to prevent Cypher injection.
+        Returns rows of ``[id, name, file_path, start_line, end_line]``.
+        """
+        assert self._conn is not None
+        all_rows: list[list[Any]] = []
+
+        for table in _SEARCHABLE_TABLES:
+            query = (
+                f"MATCH (n:{table}) WHERE n.file_path = $fp "
+                f"AND n.start_line > 0 "
+                f"RETURN n.id, n.name, n.file_path, n.start_line, n.end_line"
+            )
+            try:
+                result = self._conn.execute(query, parameters={"fp": file_path})
+                while result.has_next():
+                    all_rows.append(result.get_next())
+            except Exception:
+                logger.debug(
+                    "query_symbols_by_file failed on table %s", table, exc_info=True
+                )
+
+        return all_rows
 
     def exact_name_search(self, name: str, limit: int = 5) -> list[SearchResult]:
         """Search for nodes with an exact name match across all searchable tables.
@@ -334,7 +389,7 @@ class KuzuBackend:
             cypher = (
                 f"MATCH (n:{table}) WHERE n.name = $name "
                 f"RETURN n.id, n.name, n.file_path, n.content, n.signature "
-                f"LIMIT {limit}"
+                f"LIMIT {int(limit)}"
             )
             try:
                 result = self._conn.execute(cypher, parameters={"name": name})
@@ -374,13 +429,17 @@ class KuzuBackend:
         Returns the top *limit* results sorted by score descending.
         """
         assert self._conn is not None
-        escaped_q = _escape(query)
+        # INJ-2: Sanitize search query with strict allowlist instead of escape.
+        sanitized_q = _sanitize_search_query(query)
+        if not sanitized_q:
+            return []
+        limit = int(limit)
         candidates: list[SearchResult] = []
 
         for table in _SEARCHABLE_TABLES:
             idx_name = f"{table.lower()}_fts"
             cypher = (
-                f"CALL QUERY_FTS_INDEX('{table}', '{idx_name}', '{escaped_q}') "
+                f"CALL QUERY_FTS_INDEX('{table}', '{idx_name}', '{sanitized_q}') "
                 f"RETURN node.id, node.name, node.file_path, node.content, "
                 f"node.signature, score "
                 f"ORDER BY score DESC LIMIT {limit}"
@@ -434,19 +493,26 @@ class KuzuBackend:
         score (0 edits = 1.0, *max_distance* edits = 0.3).
         """
         assert self._conn is not None
-        escaped_q = _escape(query.lower())
+        # INJ-2: Sanitize search query with strict allowlist instead of escape.
+        sanitized_q = _sanitize_search_query(query.lower())
+        if not sanitized_q:
+            return []
+        limit = int(limit)
+        max_distance = int(max_distance)
         candidates: list[SearchResult] = []
 
         for table in _SEARCHABLE_TABLES:
             cypher = (
                 f"MATCH (n:{table}) "
-                f"WHERE levenshtein(lower(n.name), '{escaped_q}') <= {max_distance} "
+                f"WHERE levenshtein(lower(n.name), $q) <= $dist "
                 f"RETURN n.id, n.name, n.file_path, n.content, "
-                f"levenshtein(lower(n.name), '{escaped_q}') AS dist "
+                f"levenshtein(lower(n.name), $q) AS dist "
                 f"ORDER BY dist LIMIT {limit}"
             )
             try:
-                result = self._conn.execute(cypher)
+                result = self._conn.execute(
+                    cypher, parameters={"q": sanitized_q, "dist": max_distance}
+                )
                 while result.has_next():
                     row = result.get_next()
                     node_id = row[0] or ""
@@ -505,6 +571,10 @@ class KuzuBackend:
         node tables to fetch metadata in a single query.
         """
         assert self._conn is not None
+        # INJ-5: Validate that all vector elements are numeric before building literal.
+        if not all(isinstance(v, numbers.Real) for v in vector):
+            raise TypeError("Vector must contain only numeric values")
+        limit = int(limit)
         # Vector literals must be inlined — KuzuDB parameterized queries
         # cannot distinguish DOUBLE[] from LIST for array_cosine_similarity.
         vec_literal = "[" + ", ".join(str(v) for v in vector) + "]"

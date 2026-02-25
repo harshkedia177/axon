@@ -20,10 +20,6 @@ logger = logging.getLogger(__name__)
 
 MAX_TRAVERSE_DEPTH = 10
 
-
-def _escape_cypher(value: str) -> str:
-    """Escape a string for safe inclusion in a Cypher string literal."""
-    return value.replace("\\", "\\\\").replace("'", "\\'")
 _EMBED_MODEL_NAME = "BAAI/bge-small-en-v1.5"
 
 
@@ -394,11 +390,9 @@ def handle_detect_changes(storage: StorageBackend, diff: str) -> str:
     for file_path, ranges in changed_files.items():
         affected_symbols = []
         try:
-            rows = storage.execute_raw(
-                f"MATCH (n) WHERE n.file_path = '{_escape_cypher(file_path)}' "
-                f"AND n.start_line > 0 "
-                f"RETURN n.id, n.name, n.file_path, n.start_line, n.end_line"
-            )
+            # INJ-1: Use parameterized query_symbols_by_file instead of
+            # f-string interpolation into execute_raw.
+            rows = storage.query_symbols_by_file(file_path)
             for row in rows or []:
                 node_id = row[0] or ""
                 name = row[1] or ""
@@ -432,16 +426,12 @@ def handle_detect_changes(storage: StorageBackend, diff: str) -> str:
     lines.append("Next: Use impact() on affected symbols to see downstream effects.")
     return "\n".join(lines)
 
-_WRITE_KEYWORDS = re.compile(
-    r"\b(DELETE|DROP|CREATE|SET|REMOVE|MERGE|DETACH|INSTALL|LOAD|COPY|CALL)\b",
-    re.IGNORECASE,
-)
 
 def handle_cypher(storage: StorageBackend, query: str) -> str:
     """Execute a raw Cypher query and return formatted results.
 
-    Only read-only queries are allowed.  Queries containing write keywords
-    (DELETE, DROP, CREATE, SET, etc.) are rejected.
+    Only read-only queries are allowed.  The database is opened in
+    read-only mode, so the engine itself will reject write operations.
 
     Args:
         storage: The storage backend.
@@ -450,15 +440,19 @@ def handle_cypher(storage: StorageBackend, query: str) -> str:
     Returns:
         Formatted query results, or an error message if execution fails.
     """
-    if _WRITE_KEYWORDS.search(query):
-        return (
-            "Query rejected: only read-only queries (MATCH/RETURN) are allowed. "
-            "Write operations (DELETE, DROP, CREATE, SET, MERGE) are not permitted."
-        )
-
+    # INJ-4: Removed regex-based _WRITE_KEYWORDS denylist. The database
+    # connection is opened in read-only mode (server.py), so KuzuDB
+    # enforces read-only at the engine level.
     try:
-        rows = storage.execute_raw(query)
+        rows = storage.execute_read_query(query)
     except Exception as exc:
+        err_msg = str(exc).lower()
+        # Provide a user-friendly message if the DB rejects a write attempt.
+        if "read" in err_msg and "only" in err_msg:
+            return (
+                "Query rejected: the database is open in read-only mode. "
+                "Write operations (DELETE, DROP, CREATE, SET, MERGE) are not permitted."
+            )
         return f"Cypher query failed: {exc}"
 
     if not rows:

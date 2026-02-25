@@ -126,7 +126,7 @@ class TestBulkLoad:
         backend.bulk_load(graph)
         backend.bulk_load(graph)
 
-        rows = backend.execute_raw("MATCH (n:Function) RETURN n.id")
+        rows = backend.execute_read_query("MATCH (n:Function) RETURN n.id")
         assert len(rows) == 2
 
 
@@ -219,21 +219,57 @@ class TestCallersAndCallees:
 
 
 # ---------------------------------------------------------------------------
-# execute_raw
+# execute_read_query
 # ---------------------------------------------------------------------------
 
 
-class TestExecuteRaw:
+class TestExecuteReadQuery:
     def test_simple_cypher(self, backend: KuzuBackend) -> None:
         backend.add_nodes([_make_node(name="raw_test")])
 
-        rows = backend.execute_raw("MATCH (n:Function) RETURN n.name")
+        rows = backend.execute_read_query("MATCH (n:Function) RETURN n.name")
         assert len(rows) == 1
         assert rows[0][0] == "raw_test"
 
     def test_return_expression(self, backend: KuzuBackend) -> None:
-        rows = backend.execute_raw("RETURN 1 + 2 AS result")
+        rows = backend.execute_read_query("RETURN 1 + 2 AS result")
         assert rows == [[3]]
+
+    def test_with_parameters(self, backend: KuzuBackend) -> None:
+        backend.add_nodes([_make_node(name="param_test")])
+
+        rows = backend.execute_read_query(
+            "MATCH (n:Function) WHERE n.name = $name RETURN n.name",
+            parameters={"name": "param_test"},
+        )
+        assert len(rows) == 1
+        assert rows[0][0] == "param_test"
+
+
+# ---------------------------------------------------------------------------
+# query_symbols_by_file
+# ---------------------------------------------------------------------------
+
+
+class TestQuerySymbolsByFile:
+    def test_returns_symbols_for_file(self, backend: KuzuBackend) -> None:
+        node = _make_node(name="my_func", file_path="src/app.py")
+        # Ensure start_line > 0 so it passes the filter.
+        node = GraphNode(
+            id=node.id, label=node.label, name=node.name,
+            file_path=node.file_path, start_line=5, end_line=10,
+        )
+        backend.add_nodes([node])
+
+        rows = backend.query_symbols_by_file("src/app.py")
+        assert len(rows) >= 1
+        # Rows contain [id, name, file_path, start_line, end_line]
+        names = [r[1] for r in rows]
+        assert "my_func" in names
+
+    def test_returns_empty_for_no_match(self, backend: KuzuBackend) -> None:
+        rows = backend.query_symbols_by_file("nonexistent.py")
+        assert rows == []
 
 
 # ---------------------------------------------------------------------------

@@ -9,6 +9,9 @@ from pathlib import Path
 from axon.config.ignore import should_ignore
 from axon.config.languages import get_language, is_supported
 
+# FS-2: Maximum file size to index (prevents OOM on oversized files)
+MAX_FILE_SIZE = 2 * 1024 * 1024  # 2 MB
+
 @dataclass
 class FileEntry:
     """A source file discovered during walking."""
@@ -47,6 +50,16 @@ def discover_files(
         if not file_path.is_file():
             continue
 
+        # FS-1: Prevent symlink traversal outside repo boundary
+        if file_path.is_symlink():
+            continue
+        try:
+            resolved = file_path.resolve()
+            if not resolved.is_relative_to(repo_path):
+                continue
+        except (OSError, ValueError):
+            continue
+
         relative = file_path.relative_to(repo_path)
 
         if should_ignore(str(relative), gitignore_patterns):
@@ -63,9 +76,17 @@ def read_file(repo_path: Path, file_path: Path) -> FileEntry | None:
     """Read a single file and return a :class:`FileEntry`, or ``None`` on failure.
 
     Returns ``None`` when the file cannot be decoded as UTF-8 (binary files),
-    when the file is empty, or when an OS-level error occurs.
+    when the file is empty, when an OS-level error occurs, or when the file
+    exceeds :data:`MAX_FILE_SIZE`.
     """
     relative = file_path.relative_to(repo_path)
+
+    # FS-2: Skip oversized files to prevent OOM
+    try:
+        if file_path.stat().st_size > MAX_FILE_SIZE:
+            return None
+    except OSError:
+        return None
 
     try:
         content = file_path.read_text(encoding="utf-8")

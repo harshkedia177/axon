@@ -408,7 +408,8 @@ def handle_detect_changes(storage: StorageBackend, diff: str) -> str:
         except Exception as exc:
             logger.warning("Failed to query symbols for %s: %s", file_path, exc, exc_info=True)
             lines.append(f"  {file_path}:")
-            lines.append(f"    (error querying symbols: {exc})")
+            # ERR-1: omit exc from user-facing message to avoid leaking internals
+            lines.append("    (error querying symbols)")
             lines.append("")
             continue
 
@@ -453,7 +454,9 @@ def handle_cypher(storage: StorageBackend, query: str) -> str:
                 "Query rejected: the database is open in read-only mode. "
                 "Write operations (DELETE, DROP, CREATE, SET, MERGE) are not permitted."
             )
-        return f"Cypher query failed: {exc}"
+        # ERR-1: keep full details in logs only; return generic message to client
+        logger.warning("Cypher query failed: %s", exc, exc_info=True)
+        return "Cypher query failed. Check server logs for details."
 
     if not rows:
         return "Query returned no results."

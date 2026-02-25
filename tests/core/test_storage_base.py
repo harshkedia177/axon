@@ -123,8 +123,11 @@ class TestStorageBackend:
             def get_process_memberships(self, node_ids):
                 return {}
 
-            def execute_raw(self, query):
-                return None
+            def execute_read_query(self, query, parameters=None):
+                return []
+
+            def query_symbols_by_file(self, file_path):
+                return []
 
             def exact_name_search(self, name, limit=5):
                 return []

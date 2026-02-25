@@ -8,6 +8,8 @@ source files.
 
 from __future__ import annotations
 
+import re
+
 import tree_sitter_javascript as tsjavascript
 import tree_sitter_typescript as tstypescript
 from tree_sitter import Language, Node, Parser
@@ -114,6 +116,14 @@ class TypeScriptParser(LanguageParser):
             self._extract_method(node, source, result)
         elif ntype in ("jsx_opening_element", "jsx_self_closing_element"):
             self._extract_jsx_callbacks(node, result)
+        elif ntype == "template_string":
+            self._extract_template_onclick_refs(node, result)
+        elif ntype == "shorthand_property_identifier":
+            # { funcA, funcB } — shorthand object property is a reference
+            # to a same-scope symbol (function, variable, etc.).
+            result.calls.append(
+                CallInfo(name=node.text.decode(), line=node.start_point[0] + 1)
+            )
 
         for child in node.children:
             self._walk(child, source, result, visited)
@@ -153,7 +163,13 @@ class TypeScriptParser(LanguageParser):
     def _maybe_extract_module_exports(
         self, node: Node, source: str, result: ParseResult
     ) -> None:
-        """Handle ``module.exports = X`` and ``module.exports = { A, B }``."""
+        """Handle ``module.exports``, ``exports``, and ``window.X`` assignments.
+
+        Detects three patterns that expose symbols to other files:
+        - ``module.exports = X`` / ``module.exports = { A, B }``
+        - ``exports.X = ...``
+        - ``window.MyNamespace = { A, B, C }`` (browser-global revealing pattern)
+        """
         for child in node.children:
             if child.type != "assignment_expression":
                 continue
@@ -163,13 +179,19 @@ class TypeScriptParser(LanguageParser):
                 continue
 
             left_text = left.text.decode()
-            if left_text not in ("module.exports", "exports"):
+
+            is_module_export = left_text in ("module.exports", "exports")
+            is_window_export = (
+                left.type == "member_expression"
+                and left_text.startswith("window.")
+            )
+
+            if not is_module_export and not is_window_export:
                 continue
 
             if right.type == "identifier":
                 result.exports.append(right.text.decode())
             elif right.type == "object":
-                # module.exports = { Foo, Bar, baz: something }
                 for prop in right.children:
                     if prop.type == "shorthand_property_identifier":
                         result.exports.append(prop.text.decode())
@@ -550,24 +572,20 @@ class TypeScriptParser(LanguageParser):
                     )
                 break
 
-        # --- Callback props (on* pattern) ---
+        # --- Prop function references ---
+        # Any JSX attribute whose value is a bare identifier or member
+        # expression is a potential function reference (not just on* props).
+        # This captures patterns like ``viewCampaign={viewCampaign}`` and
+        # ``closeCampaignDetail={closeCampaignDetail}``.
         for child in node.children:
             if child.type != "jsx_attribute":
                 continue
-            attr_name_node = None
             attr_value_node = None
             for sub in child.children:
-                if sub.type in ("jsx_attribute_name", "property_identifier", "identifier"):
-                    attr_name_node = sub
-                elif sub.type == "jsx_expression":
+                if sub.type == "jsx_expression":
                     attr_value_node = sub
 
-            if attr_name_node is None or attr_value_node is None:
-                continue
-
-            attr_name = attr_name_node.text.decode()
-            # Match any on + Uppercase pattern (onClick, onSave, onCustomEvent, …)
-            if not (len(attr_name) > 2 and attr_name.startswith("on") and attr_name[2].isupper()):
+            if attr_value_node is None:
                 continue
 
             for expr_child in attr_value_node.children:
@@ -615,26 +633,57 @@ class TypeScriptParser(LanguageParser):
                 if name and name[0].isupper():
                     result.calls.append(CallInfo(name=name, line=line))
 
-        # Second argument: props object — extract on* callback values
+        # Second argument: props object — extract identifier values as potential
+        # function references (same logic as expanded JSX prop handling).
         if len(arg_children) >= 2:
             props_arg = arg_children[1]
             if props_arg.type == "object":
                 for prop in props_arg.children:
-                    if prop.type == "pair":
-                        key = prop.child_by_field_name("key")
+                    if prop.type == "shorthand_property_identifier":
+                        result.calls.append(
+                            CallInfo(name=prop.text.decode(), line=line)
+                        )
+                    elif prop.type == "pair":
                         value = prop.child_by_field_name("value")
-                        if key is None or value is None:
-                            continue
-                        key_text = key.text.decode()
-                        if (
-                            len(key_text) > 2
-                            and key_text.startswith("on")
-                            and key_text[2].isupper()
-                            and value.type == "identifier"
-                        ):
+                        if value is not None and value.type == "identifier":
                             result.calls.append(
                                 CallInfo(name=value.text.decode(), line=line)
                             )
+
+    # Matches function references inside template literal strings:
+    # 1. onclick="funcName(..." — inline event handler in generated HTML
+    # 2. `funcName(${arg})` — bare function call string (used for dynamic onclick)
+    _TEMPLATE_EVENT_RE = re.compile(
+        r"""on\w+\s*=\s*["']([A-Za-z_$][A-Za-z0-9_$]*)\s*\(""",
+    )
+    _TEMPLATE_BARE_CALL_RE = re.compile(
+        r"""^([A-Za-z_$][A-Za-z0-9_$]*)\s*\(""",
+    )
+
+    def _extract_template_onclick_refs(self, node: Node, result: ParseResult) -> None:
+        """Extract function references from inline event handlers in template strings.
+
+        Scans template literal content for patterns like ``onclick="funcName(..."``
+        and emits synthetic CallInfo entries so the referenced function gets a
+        CALLS edge instead of being flagged as dead code.
+        """
+        line = node.start_point[0] + 1
+        for child in node.children:
+            if child.type == "string_fragment" or child.type == "template_content":
+                text = child.text.decode()
+            elif child.type == "template_substitution":
+                continue
+            else:
+                continue
+            for m in self._TEMPLATE_EVENT_RE.finditer(text):
+                func_name = m.group(1)
+                result.calls.append(CallInfo(name=func_name, line=line))
+            # Bare function call at start of template fragment
+            # (e.g. `openCampaignStatsById(${c.id})`)
+            m = self._TEMPLATE_BARE_CALL_RE.match(text.strip())
+            if m:
+                func_name = m.group(1)
+                result.calls.append(CallInfo(name=func_name, line=line))
 
     @staticmethod
     def _extract_identifier_arguments(call_node: Node) -> list[str]:

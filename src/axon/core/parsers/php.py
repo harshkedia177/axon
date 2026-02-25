@@ -293,6 +293,12 @@ class PhpParser(LanguageParser):
                                             )
                                         )
 
+    # PHP functions that take a callable as a string argument.
+    _CALLBACK_FUNCTIONS: frozenset[str] = frozenset({
+        "register_shutdown_function", "call_user_func", "call_user_func_array",
+        "set_error_handler", "set_exception_handler", "spl_autoload_register",
+    })
+
     def _extract_function_call(self, node: Node, result: ParseResult) -> None:
         """Extract a function call expression."""
         func_node = node.child_by_field_name("function")
@@ -302,17 +308,24 @@ class PhpParser(LanguageParser):
         line = node.start_point[0] + 1
         arguments = self._extract_identifier_arguments(node)
 
+        func_name = ""
         if func_node.type == "name":
+            func_name = func_node.text.decode()
             result.calls.append(
-                CallInfo(name=func_node.text.decode(), line=line, arguments=arguments)
+                CallInfo(name=func_name, line=line, arguments=arguments)
             )
         elif func_node.type == "qualified_name":
             name = self._qualified_name(func_node)
-            # Use just the last segment as the call name
-            short = name.rsplit("\\", 1)[-1] if "\\" in name else name
+            func_name = name.rsplit("\\", 1)[-1] if "\\" in name else name
             result.calls.append(
-                CallInfo(name=short, line=line, arguments=arguments)
+                CallInfo(name=func_name, line=line, arguments=arguments)
             )
+
+        # For known callback-registration functions, extract string literal
+        # arguments as synthetic calls (e.g. register_shutdown_function('handler')).
+        if func_name in self._CALLBACK_FUNCTIONS:
+            for cb_name in self._extract_string_arguments(node):
+                result.calls.append(CallInfo(name=cb_name, line=line))
 
     def _extract_member_call(self, node: Node, result: ParseResult) -> None:
         """Extract ``$obj->method()`` calls."""
@@ -534,3 +547,28 @@ class PhpParser(LanguageParser):
                     elif sub.type == "name":
                         identifiers.append(sub.text.decode())
         return identifiers
+
+    @staticmethod
+    def _extract_string_arguments(call_node: Node) -> list[str]:
+        """Extract string literal arguments that look like function names.
+
+        Used to resolve callback registrations like
+        ``register_shutdown_function('_my_handler')``.  Only returns
+        strings that are valid PHP identifiers (no backslashes, spaces, etc.).
+        """
+        args_node = call_node.child_by_field_name("arguments")
+        if args_node is None:
+            return []
+
+        names: list[str] = []
+        for child in args_node.children:
+            if child.type == "argument":
+                for sub in child.children:
+                    if sub.type in ("string", "encapsed_string"):
+                        for inner in sub.children:
+                            if inner.type == "string_content":
+                                text = inner.text.decode()
+                                # Only accept simple identifiers (no namespaces, spaces, etc.)
+                                if text.isidentifier():
+                                    names.append(text)
+        return names

@@ -106,6 +106,21 @@ def _is_type_referenced(graph: KnowledgeGraph, node_id: str, label: NodeLabel) -
         return False
     return graph.has_incoming(node_id, RelType.USES_TYPE)
 
+
+def _is_subclassed(graph: KnowledgeGraph, node_id: str, label: NodeLabel) -> bool:
+    """Return ``True`` if *node_id* is a class or interface with subclasses.
+
+    A class that has incoming EXTENDS or IMPLEMENTS edges is being
+    subclassed/implemented — it is not dead even if never instantiated
+    directly (e.g. abstract base classes, interfaces).
+    """
+    if label != NodeLabel.CLASS:
+        return False
+    return (
+        graph.has_incoming(node_id, RelType.EXTENDS)
+        or graph.has_incoming(node_id, RelType.IMPLEMENTS)
+    )
+
 _NON_FRAMEWORK_DECORATORS: frozenset[str] = frozenset({
     "functools.wraps",
     "functools.lru_cache",
@@ -371,6 +386,8 @@ def process_dead_code(graph: KnowledgeGraph) -> int:
             if graph.has_incoming(node.id, RelType.CALLS):
                 continue
             if _is_type_referenced(graph, node.id, label):
+                continue
+            if _is_subclassed(graph, node.id, label):
                 continue
             if _has_framework_decorator(node):
                 continue

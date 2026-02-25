@@ -158,8 +158,8 @@ def resolve_call(
     if imported_target is not None:
         return imported_target, 1.0
 
-    # 3. Global fuzzy match -- prefer shortest file path.
-    return _pick_closest(candidate_ids, graph), 0.5
+    # 3. Global fuzzy match -- prefer path proximity to caller, then shortest path.
+    return _pick_closest(candidate_ids, file_path, graph), 0.5
 
 def _resolve_self_method(
     method_name: str,
@@ -222,18 +222,45 @@ def _resolve_via_imports(
 
     return None
 
-def _pick_closest(candidate_ids: list[str], graph: KnowledgeGraph) -> str | None:
-    """Pick the candidate with the shortest file path (proximity heuristic).
+def _common_prefix_len(a: str, b: str) -> int:
+    """Return the length of the longest common directory prefix."""
+    parts_a = a.split("/")
+    parts_b = b.split("/")
+    common = 0
+    for pa, pb in zip(parts_a, parts_b):
+        if pa == pb:
+            common += 1
+        else:
+            break
+    return common
+
+
+def _pick_closest(
+    candidate_ids: list[str],
+    caller_file_path: str,
+    graph: KnowledgeGraph,
+) -> str | None:
+    """Pick the candidate closest to *caller_file_path*.
+
+    Proximity is measured by the longest common directory prefix with the
+    caller's file path.  Ties are broken by shortest absolute path length
+    (the original heuristic).
 
     Returns ``None`` if no candidates can be resolved to actual nodes.
     """
     best_id: str | None = None
+    best_prefix = -1
     best_path_len = float("inf")
 
     for nid in candidate_ids:
         node = graph.get_node(nid)
-        if node is not None and len(node.file_path) < best_path_len:
-            best_path_len = len(node.file_path)
+        if node is None:
+            continue
+        prefix = _common_prefix_len(node.file_path, caller_file_path)
+        path_len = len(node.file_path)
+        if prefix > best_prefix or (prefix == best_prefix and path_len < best_path_len):
+            best_prefix = prefix
+            best_path_len = path_len
             best_id = nid
 
     return best_id

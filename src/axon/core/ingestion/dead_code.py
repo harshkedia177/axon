@@ -31,6 +31,14 @@ _PHP_MAGIC_METHODS: frozenset[str] = frozenset({
     "__debugInfo",
 })
 
+def _is_test_method(name: str) -> bool:
+    """Return ``True`` if *name* follows PHPUnit / JUnit test convention.
+
+    Matches camelCase names starting with ``test`` where the next character
+    is uppercase, e.g. ``testSanitizeEscapesHtml``, ``testEncryptRoundTrip``.
+    """
+    return len(name) > 4 and name.startswith("test") and name[4].isupper()
+
 def _is_test_class(name: str) -> bool:
     """Return ``True`` if *name* follows pytest class convention (``Test*``).
 
@@ -42,18 +50,20 @@ def _is_test_class(name: str) -> bool:
 def _is_test_file(file_path: str) -> bool:
     """Return ``True`` if the file is in a test directory or is a test file.
 
-    Matches Python conventions (``/tests/``, ``test_*.py``, ``conftest.py``)
-    and JavaScript/TypeScript conventions (``__tests__/``, ``*.test.*``,
-    ``*.spec.*``).
+    Matches Python conventions (``/tests/``, ``test_*.py``, ``conftest.py``),
+    JavaScript/TypeScript conventions (``__tests__/``, ``*.test.*``,
+    ``*.spec.*``), and PHP conventions (``tests/``, ``*Test.php``).
     """
     return (
         "/tests/" in file_path
+        or file_path.startswith("tests/")
         or "/test/" in file_path
         or "/__tests__/" in file_path
         or "/test_" in file_path
         or ".test." in file_path
         or ".spec." in file_path
         or file_path.endswith("conftest.py")
+        or file_path.endswith("Test.php")
     )
 
 def _is_dunder(name: str) -> bool:
@@ -153,6 +163,7 @@ def _is_exempt(
         or name in _CONSTRUCTOR_NAMES
         or name in _PHP_MAGIC_METHODS
         or name.startswith("test_")
+        or _is_test_method(name)
         or _is_test_class(name)
         or _is_test_file(file_path)
         or _is_dunder(name)

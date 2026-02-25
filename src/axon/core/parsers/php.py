@@ -75,14 +75,25 @@ class PhpParser(LanguageParser):
                 self._extract_scoped_call(child, result)
             elif ntype in ("expression_statement", "return_statement",
                            "compound_statement", "if_statement",
+                           "else_clause", "else_if_clause",
                            "while_statement", "for_statement",
                            "foreach_statement", "switch_statement",
+                           "switch_block", "case_statement",
+                           "default_statement",
                            "try_statement", "catch_clause",
+                           "finally_clause",
                            "program", "namespace_definition",
-                           "declaration_list", "enum_declaration_list"):
+                           "declaration_list", "enum_declaration_list",
+                           "parenthesized_expression", "assignment_expression",
+                           "binary_expression", "unary_op_expression",
+                           "match_expression", "match_condition_list",
+                           "match_conditional_expression"):
                 self._walk(child, source, result, class_name)
             elif ntype == "object_creation_expression":
                 self._extract_new_expression(child, result)
+            elif ntype in ("require_expression", "require_once_expression",
+                           "include_expression", "include_once_expression"):
+                self._extract_include(child, result)
 
     def _extract_function(
         self, node: Node, source: str, result: ParseResult
@@ -459,6 +470,52 @@ class PhpParser(LanguageParser):
         if return_type:
             sig += f": {return_type}"
         return sig
+
+    def _extract_include(self, node: Node, result: ParseResult) -> None:
+        """Extract ``require_once``, ``include``, etc. as import references.
+
+        Handles simple string paths like ``require_once "config.php"`` and
+        ``__DIR__ . "/helpers/utils.php"`` concatenation patterns.
+        """
+        path = self._extract_include_path(node)
+        if not path:
+            return
+
+        # Normalize: strip leading ./ and resolve relative markers
+        path = path.lstrip("./")
+
+        result.imports.append(
+            ImportInfo(
+                module=path,
+                names=[],
+                is_relative=True,
+            )
+        )
+
+    @staticmethod
+    def _extract_include_path(node: Node) -> str:
+        """Extract the file path string from an include/require node."""
+        for child in node.children:
+            if child.type == "encapsed_string":
+                for sub in child.children:
+                    if sub.type == "string_content":
+                        return sub.text.decode()
+            elif child.type == "string":
+                for sub in child.children:
+                    if sub.type == "string_content":
+                        return sub.text.decode()
+            elif child.type == "binary_expression":
+                # Handle __DIR__ . "/path/to/file.php"
+                for sub in child.children:
+                    if sub.type == "encapsed_string":
+                        for inner in sub.children:
+                            if inner.type == "string_content":
+                                return inner.text.decode()
+                    elif sub.type == "string":
+                        for inner in sub.children:
+                            if inner.type == "string_content":
+                                return inner.text.decode()
+        return ""
 
     @staticmethod
     def _extract_identifier_arguments(call_node: Node) -> list[str]:

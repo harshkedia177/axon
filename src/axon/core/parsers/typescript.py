@@ -112,6 +112,8 @@ class TypeScriptParser(LanguageParser):
             self._maybe_extract_module_exports(node, source, result)
         elif ntype == "method_definition":
             self._extract_method(node, source, result)
+        elif ntype in ("jsx_opening_element", "jsx_self_closing_element"):
+            self._extract_jsx_callbacks(node, result)
 
         for child in node.children:
             self._walk(child, source, result, visited)
@@ -512,6 +514,64 @@ class TypeScriptParser(LanguageParser):
                         arguments=arguments,
                     )
                 )
+
+    _JSX_EVENT_ATTRS: frozenset[str] = frozenset({
+        "onClick", "onChange", "onSubmit", "onBlur", "onFocus",
+        "onKeyDown", "onKeyUp", "onKeyPress", "onInput", "onScroll",
+        "onMouseDown", "onMouseUp", "onMouseEnter", "onMouseLeave",
+        "onDragStart", "onDragEnd", "onDrop", "onTouchStart", "onTouchEnd",
+        "onDoubleClick", "onContextMenu", "onSelect", "onReset",
+        "onLoad", "onError", "onResize", "onClose", "onOpen",
+        "onToggle", "onCancel", "onConfirm",
+    })
+
+    def _extract_jsx_callbacks(self, node: Node, result: ParseResult) -> None:
+        """Extract function references from JSX event handler attributes.
+
+        Handles patterns like ``onClick={handleClick}`` and
+        ``onChange={this.handleChange}`` by extracting the identifier as
+        a call reference.  Arrow wrappers like ``onClick={() => doThing()}``
+        are handled by the normal call_expression walker.
+        """
+        for child in node.children:
+            if child.type != "jsx_attribute":
+                continue
+            attr_name_node = None
+            attr_value_node = None
+            for sub in child.children:
+                if sub.type in ("jsx_attribute_name", "property_identifier", "identifier"):
+                    attr_name_node = sub
+                elif sub.type == "jsx_expression":
+                    attr_value_node = sub
+
+            if attr_name_node is None or attr_value_node is None:
+                continue
+
+            attr_name = attr_name_node.text.decode()
+            if attr_name not in self._JSX_EVENT_ATTRS:
+                continue
+
+            # Extract the identifier from {handlerName} or {obj.method}
+            for expr_child in attr_value_node.children:
+                if expr_child.type == "identifier":
+                    result.calls.append(
+                        CallInfo(
+                            name=expr_child.text.decode(),
+                            line=child.start_point[0] + 1,
+                        )
+                    )
+                elif expr_child.type == "member_expression":
+                    prop = expr_child.child_by_field_name("property")
+                    obj = expr_child.child_by_field_name("object")
+                    if prop is not None:
+                        receiver = obj.text.decode() if obj else ""
+                        result.calls.append(
+                            CallInfo(
+                                name=prop.text.decode(),
+                                line=child.start_point[0] + 1,
+                                receiver=receiver,
+                            )
+                        )
 
     @staticmethod
     def _extract_identifier_arguments(call_node: Node) -> list[str]:

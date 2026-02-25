@@ -16,6 +16,7 @@ import logging
 
 from axon.core.graph.graph import KnowledgeGraph
 from axon.core.graph.model import (
+    GraphNode,
     GraphRelationship,
     NodeLabel,
     RelType,
@@ -330,13 +331,13 @@ def process_calls(
                 call.line, fpd.file_path, file_sym_index
             )
             if source_id is None:
-                logger.debug(
-                    "No containing symbol for call %s at line %d in %s",
-                    call.name,
-                    call.line,
-                    fpd.file_path,
-                )
-                continue
+                # Top-level calls (e.g. PHP switch-dispatch, HTML inline
+                # scripts, JS module-level code) have no containing symbol.
+                # Fall back to the FILE node so the target still gets an
+                # incoming CALLS edge and avoids false dead-code flags.
+                source_id = generate_id(NodeLabel.FILE, fpd.file_path)
+                if graph.get_node(source_id) is None:
+                    continue
 
             target_id, confidence = resolve_call(
                 call, fpd.file_path, call_index, graph

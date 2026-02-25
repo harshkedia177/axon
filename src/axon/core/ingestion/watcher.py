@@ -63,7 +63,12 @@ def _reindex_files(
         if not is_supported(abs_path):
             continue
 
-        entry = read_file(repo_path, abs_path)
+        # RACE-1: Handle file disappearing between is_file() check and read.
+        try:
+            entry = read_file(repo_path, abs_path)
+        except (FileNotFoundError, PermissionError, OSError):
+            logger.debug("File disappeared or became inaccessible: %s", abs_path)
+            continue
         if entry is not None:
             entries.append(entry)
 

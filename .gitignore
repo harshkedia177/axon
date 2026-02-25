@@ -19,3 +19,9 @@ wheels/
 
 # OS
 .DS_Store
+
+# Secrets
+.env
+.env.*
+*.pem
+*.key

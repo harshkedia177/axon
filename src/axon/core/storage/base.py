@@ -112,8 +112,14 @@ class StorageBackend(Protocol):
         """Return ``{node_id: process_name}`` for nodes belonging to a Process."""
         ...
 
-    def execute_raw(self, query: str) -> Any:
-        """Execute a raw backend-specific query string."""
+    def execute_read_query(
+        self, query: str, parameters: dict[str, Any] | None = None
+    ) -> Any:
+        """Execute a read-only backend query with optional parameters."""
+        ...
+
+    def query_symbols_by_file(self, file_path: str) -> list[list[Any]]:
+        """Return symbols matching *file_path* using parameterized queries."""
         ...
 
     def exact_name_search(self, name: str, limit: int = 5) -> list[SearchResult]:

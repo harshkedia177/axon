@@ -65,7 +65,8 @@ def mock_storage():
     storage.get_callers_with_confidence.return_value = []
     storage.get_callees_with_confidence.return_value = []
     storage.get_process_memberships.return_value = {}
-    storage.execute_raw.return_value = []
+    storage.execute_read_query.return_value = []
+    storage.query_symbols_by_file.return_value = []
     return storage
 
 
@@ -290,7 +291,7 @@ class TestHandleDeadCode:
 
     def test_with_dead_code(self, mock_storage):
         """Returns formatted dead code list (delegates to get_dead_code_list)."""
-        mock_storage.execute_raw.return_value = [
+        mock_storage.execute_read_query.return_value = [
             ["unused_func", "src/old.py", 10],
             ["DeprecatedModel", "src/models.py", 5],
         ]
@@ -299,9 +300,9 @@ class TestHandleDeadCode:
         assert "unused_func" in result
         assert "DeprecatedModel" in result
 
-    def test_execute_raw_exception(self, mock_storage):
+    def test_execute_read_query_exception(self, mock_storage):
         """Gracefully handles storage errors."""
-        mock_storage.execute_raw.side_effect = RuntimeError("DB error")
+        mock_storage.execute_read_query.side_effect = RuntimeError("DB error")
         result = handle_dead_code(mock_storage)
         assert "Could not retrieve dead code list" in result
 
@@ -328,9 +329,9 @@ index abc1234..def5678 100644
 class TestHandleDetectChanges:
     def test_parses_diff(self, mock_storage):
         """Successfully parses diff and identifies changed files."""
-        # handle_detect_changes now uses execute_raw() with a Cypher query
-        # to find symbols in the changed file.
-        mock_storage.execute_raw.return_value = [
+        # handle_detect_changes now uses query_symbols_by_file() with a
+        # parameterized query to find symbols in the changed file.
+        mock_storage.query_symbols_by_file.return_value = [
             ["function:src/auth.py:validate", "validate", "src/auth.py", 10, 30],
         ]
 
@@ -351,7 +352,7 @@ class TestHandleDetectChanges:
 
     def test_no_symbols_in_changed_lines(self, mock_storage):
         """Reports file but no symbols when nothing overlaps."""
-        mock_storage.execute_raw.return_value = []
+        mock_storage.query_symbols_by_file.return_value = []
         result = handle_detect_changes(mock_storage, SAMPLE_DIFF)
         assert "src/auth.py" in result
         assert "no indexed symbols" in result
@@ -365,7 +366,7 @@ class TestHandleDetectChanges:
 class TestHandleCypher:
     def test_returns_results(self, mock_storage):
         """Formats raw query results."""
-        mock_storage.execute_raw.return_value = [
+        mock_storage.execute_read_query.return_value = [
             ["validate", "src/auth.py", 10],
             ["login", "src/api.py", 5],
         ]
@@ -381,7 +382,7 @@ class TestHandleCypher:
 
     def test_query_error(self, mock_storage):
         """Returns error message when query execution fails."""
-        mock_storage.execute_raw.side_effect = RuntimeError("Syntax error")
+        mock_storage.execute_read_query.side_effect = RuntimeError("Syntax error")
         result = handle_cypher(mock_storage, "INVALID QUERY")
         assert "failed" in result.lower()
         assert "Syntax error" in result
@@ -407,7 +408,7 @@ class TestResources:
         """Overview resource queries storage for stats."""
         from axon.mcp.resources import get_overview
 
-        mock_storage.execute_raw.return_value = [["Function", 42]]
+        mock_storage.execute_read_query.return_value = [["Function", 42]]
         result = get_overview(mock_storage)
         assert "Axon Codebase Overview" in result
 
@@ -415,7 +416,7 @@ class TestResources:
         """Dead code resource returns formatted report."""
         from axon.mcp.resources import get_dead_code_list
 
-        mock_storage.execute_raw.return_value = [
+        mock_storage.execute_read_query.return_value = [
             ["old_func", "src/old.py", 10],
         ]
         result = get_dead_code_list(mock_storage)

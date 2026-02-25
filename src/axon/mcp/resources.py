@@ -26,7 +26,7 @@ def get_overview(storage: StorageBackend) -> str:
     lines = ["Axon Codebase Overview", "=" * 40, ""]
 
     try:
-        rows = storage.execute_raw(
+        rows = storage.execute_read_query(
             "MATCH (n) RETURN labels(n), count(n) ORDER BY count(n) DESC"
         )
         if rows:
@@ -46,7 +46,7 @@ def get_overview(storage: StorageBackend) -> str:
     lines.append("")
 
     try:
-        rows = storage.execute_raw(
+        rows = storage.execute_read_query(
             "MATCH ()-[r]->() RETURN r.rel_type, count(r) ORDER BY count(r) DESC"
         )
         if rows:
@@ -75,7 +75,7 @@ def get_dead_code_list(storage: StorageBackend) -> str:
         Formatted list of symbols flagged as dead code.
     """
     try:
-        rows = storage.execute_raw(
+        rows = storage.execute_read_query(
             "MATCH (n) WHERE n.is_dead = true "
             "RETURN n.name, n.file_path, n.start_line ORDER BY n.file_path"
         )

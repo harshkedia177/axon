@@ -23,6 +23,14 @@ _SYMBOL_LABELS: tuple[NodeLabel, ...] = (
 
 _CONSTRUCTOR_NAMES: frozenset[str] = frozenset({"__init__", "__new__", "__construct"})
 
+# Test framework lifecycle methods invoked implicitly by the runner.
+_LIFECYCLE_METHODS: frozenset[str] = frozenset({
+    # PHPUnit / JUnit
+    "setUp", "tearDown", "setUpBeforeClass", "tearDownAfterClass",
+    # Python unittest
+    "setUpClass", "tearDownClass", "setUpModule", "tearDownModule",
+})
+
 # PHP magic methods that are invoked implicitly by the runtime.
 _PHP_MAGIC_METHODS: frozenset[str] = frozenset({
     "__construct", "__destruct", "__call", "__callStatic", "__get",
@@ -52,11 +60,14 @@ def _is_test_file(file_path: str) -> bool:
 
     Matches Python conventions (``/tests/``, ``test_*.py``, ``conftest.py``),
     JavaScript/TypeScript conventions (``__tests__/``, ``*.test.*``,
-    ``*.spec.*``), and PHP conventions (``tests/``, ``*Test.php``).
+    ``*.spec.*``), and PHP conventions (``tests/`` or ``Tests/``,
+    ``*Test.php``).
     """
     return (
         "/tests/" in file_path
+        or "/Tests/" in file_path
         or file_path.startswith("tests/")
+        or file_path.startswith("Tests/")
         or "/test/" in file_path
         or "/__tests__/" in file_path
         or "/test_" in file_path
@@ -65,6 +76,15 @@ def _is_test_file(file_path: str) -> bool:
         or file_path.endswith("conftest.py")
         or file_path.endswith("Test.php")
     )
+
+def _is_html_file(file_path: str) -> bool:
+    """Return ``True`` if the file is an HTML file.
+
+    Functions in HTML inline ``<script>`` blocks are almost always page-local
+    UI handlers bound via template-literal ``onclick`` strings, ``addEventListener``
+    callbacks, or array references that cannot be statically extracted.
+    """
+    return file_path.endswith((".html", ".htm"))
 
 def _is_dunder(name: str) -> bool:
     """Return ``True`` if *name* is a dunder (double-underscore) method.
@@ -156,18 +176,22 @@ def _is_exempt(
     - It lives in a test file (fixtures, helpers are not dead code).
     - It is a dunder method (``__str__``, ``__repr__``, etc.).
     - It is a public symbol in a Python ``__init__.py`` file.
+    - It is a test lifecycle method (``setUp``, ``tearDown``, etc.).
+    - It lives in an HTML file (inline script functions are page-local).
     """
     return (
         is_entry_point
         or is_exported
         or name in _CONSTRUCTOR_NAMES
         or name in _PHP_MAGIC_METHODS
+        or name in _LIFECYCLE_METHODS
         or name.startswith("test_")
         or _is_test_method(name)
         or _is_test_class(name)
         or _is_test_file(file_path)
         or _is_dunder(name)
         or _is_python_public_api(name, file_path)
+        or _is_html_file(file_path)
     )
 
 def _clear_override_false_positives(graph: KnowledgeGraph) -> int:
@@ -185,13 +209,14 @@ def _clear_override_false_positives(graph: KnowledgeGraph) -> int:
         if not method.is_dead and method.class_name:
             alive_methods_by_class.setdefault(method.class_name, set()).add(method.name)
 
-    # Build child -> parent class mapping from EXTENDS relationships.
+    # Build child -> parent class mapping from EXTENDS and IMPLEMENTS relationships.
     child_to_parents: dict[str, list[str]] = {}
-    for rel in graph.get_relationships_by_type(RelType.EXTENDS):
-        child_node = graph.get_node(rel.source)
-        parent_node = graph.get_node(rel.target)
-        if child_node and parent_node:
-            child_to_parents.setdefault(child_node.name, []).append(parent_node.name)
+    for rel_type in (RelType.EXTENDS, RelType.IMPLEMENTS):
+        for rel in graph.get_relationships_by_type(rel_type):
+            child_node = graph.get_node(rel.source)
+            parent_node = graph.get_node(rel.target)
+            if child_node and parent_node:
+                child_to_parents.setdefault(child_node.name, []).append(parent_node.name)
 
     cleared = 0
     for method in graph.get_nodes_by_label(NodeLabel.METHOD):

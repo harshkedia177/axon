@@ -271,19 +271,24 @@ def _resolve_php(
     import_info: ImportInfo,
     file_index: dict[str, str],
 ) -> str | None:
-    r"""Resolve a PHP ``use`` statement to a file node ID.
+    r"""Resolve a PHP import to a file node ID.
 
-    Converts the namespace path (e.g. ``App\Services\UserService``) to a
-    filesystem path by replacing backslashes with forward slashes and
-    trying common PHP project layouts.
+    Handles two forms:
 
-    Handles PSR-4-style resolution:
-    - ``App\Models\User`` -> ``app/Models/User.php`` or ``src/Models/User.php``
+    1. **Relative includes** (``require_once __DIR__ . '/helpers/utils.php'``)
+       resolved relative to the importing file's directory.
+    2. **Namespace ``use`` statements** (``use App\Services\UserService``)
+       resolved via PSR-4-style path conversion.
     """
     module = import_info.module
     if not module:
         return None
 
+    # Relative includes (require_once, include, etc.)
+    if import_info.is_relative:
+        return _resolve_php_include(importing_file, module, file_index)
+
+    # Namespace-based use statements (PSR-4)
     # Convert namespace separators to path separators
     ns_path = module.replace("\\", "/")
 
@@ -304,6 +309,29 @@ def _resolve_php(
     for candidate in candidates:
         if candidate in file_index:
             return file_index[candidate]
+
+    return None
+
+
+def _resolve_php_include(
+    importing_file: str,
+    module: str,
+    file_index: dict[str, str],
+) -> str | None:
+    """Resolve a PHP ``require_once`` / ``include`` to a file node ID.
+
+    The *module* is a relative file path (e.g. ``helpers/utils.php`` or
+    ``../config/config.php``) extracted from the include statement.
+    Resolution is relative to the importing file's directory.
+    """
+    import posixpath
+
+    base = str(PurePosixPath(importing_file).parent)
+    joined = posixpath.join(base, module)
+    resolved = posixpath.normpath(joined)
+
+    if resolved in file_index:
+        return file_index[resolved]
 
     return None
 

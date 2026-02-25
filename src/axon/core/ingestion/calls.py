@@ -324,8 +324,10 @@ def process_calls(
 
     for fpd in parse_data:
         for call in fpd.parse_result.calls:
-            if call.name in _CALL_BLOCKLIST and call.receiver not in ("self", "this"):
-                continue
+            is_blocklisted = (
+                call.name in _CALL_BLOCKLIST
+                and call.receiver not in ("self", "this")
+            )
 
             source_id = find_containing_symbol(
                 call.line, fpd.file_path, file_sym_index
@@ -339,14 +341,17 @@ def process_calls(
                 if graph.get_node(source_id) is None:
                     continue
 
-            target_id, confidence = resolve_call(
-                call, fpd.file_path, call_index, graph
-            )
-            if target_id is not None:
-                _add_calls_edge(source_id, target_id, confidence, graph, seen)
+            if not is_blocklisted:
+                target_id, confidence = resolve_call(
+                    call, fpd.file_path, call_index, graph
+                )
+                if target_id is not None:
+                    _add_calls_edge(source_id, target_id, confidence, graph, seen)
 
             # Callback arguments: bare identifiers passed as arguments
-            # (e.g. map(transform, items), Depends(get_db)).
+            # (e.g. map(transform, items), Depends(get_db),
+            # setTimeout(handler, 1000)).  Always processed even when the
+            # callee is blocklisted — the callback itself may be user code.
             for arg_name in call.arguments:
                 if arg_name in _CALL_BLOCKLIST:
                     continue
@@ -358,19 +363,20 @@ def process_calls(
                     _add_calls_edge(source_id, arg_id, arg_conf * 0.8, graph, seen)
 
             # Receiver: link to the class and resolve the method on it.
-            receiver = call.receiver
-            if receiver and receiver not in ("self", "this"):
-                receiver_call = CallInfo(name=receiver, line=call.line)
-                recv_id, recv_conf = resolve_call(
-                    receiver_call, fpd.file_path, call_index, graph
-                )
-                if recv_id is not None:
-                    _add_calls_edge(source_id, recv_id, recv_conf, graph, seen)
+            if not is_blocklisted:
+                receiver = call.receiver
+                if receiver and receiver not in ("self", "this"):
+                    receiver_call = CallInfo(name=receiver, line=call.line)
+                    recv_id, recv_conf = resolve_call(
+                        receiver_call, fpd.file_path, call_index, graph
+                    )
+                    if recv_id is not None:
+                        _add_calls_edge(source_id, recv_id, recv_conf, graph, seen)
 
-                _resolve_receiver_method(
-                    receiver, call.name, source_id, fpd.file_path,
-                    call_index, graph, seen,
-                )
+                    _resolve_receiver_method(
+                        receiver, call.name, source_id, fpd.file_path,
+                        call_index, graph, seen,
+                    )
 
         # Decorators are implicit calls — @cost_decorator on a function is
         # equivalent to calling cost_decorator(func).  Create CALLS edges

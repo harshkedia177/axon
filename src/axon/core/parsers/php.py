@@ -45,55 +45,56 @@ class PhpParser(LanguageParser):
         """Parse PHP source and return structured information."""
         tree = self._parser.parse(content.encode("utf-8"))
         result = ParseResult()
-        self._walk(tree.root_node, content, result, class_name="")
+        self._walk(tree.root_node, content, result)
         return result
 
     def _walk(
-        self, node: Node, source: str, result: ParseResult, class_name: str
+        self, node: Node, source: str, result: ParseResult,
+        visited: set[int] | None = None,
     ) -> None:
-        """Recursively walk the AST to extract definitions, imports, and calls."""
-        for child in node.children:
-            ntype = child.type
+        """Recursively walk the AST to extract definitions, imports, and calls.
 
-            if ntype == "function_definition":
-                self._extract_function(child, source, result)
-            elif ntype == "class_declaration":
-                self._extract_class(child, source, result)
-            elif ntype == "interface_declaration":
-                self._extract_interface(child, source, result)
-            elif ntype == "enum_declaration":
-                self._extract_enum(child, source, result)
-            elif ntype == "method_declaration":
-                self._extract_method(child, source, result, class_name)
-            elif ntype == "namespace_use_declaration":
-                self._extract_use(child, result)
-            elif ntype == "function_call_expression":
-                self._extract_function_call(child, result)
-            elif ntype == "member_call_expression":
-                self._extract_member_call(child, result)
-            elif ntype == "scoped_call_expression":
-                self._extract_scoped_call(child, result)
-            elif ntype in ("expression_statement", "return_statement",
-                           "compound_statement", "if_statement",
-                           "else_clause", "else_if_clause",
-                           "while_statement", "for_statement",
-                           "foreach_statement", "switch_statement",
-                           "switch_block", "case_statement",
-                           "default_statement",
-                           "try_statement", "catch_clause",
-                           "finally_clause",
-                           "program", "namespace_definition",
-                           "declaration_list", "enum_declaration_list",
-                           "parenthesized_expression", "assignment_expression",
-                           "binary_expression", "unary_op_expression",
-                           "match_expression", "match_condition_list",
-                           "match_conditional_expression"):
-                self._walk(child, source, result, class_name)
-            elif ntype == "object_creation_expression":
-                self._extract_new_expression(child, result)
-            elif ntype in ("require_expression", "require_once_expression",
-                           "include_expression", "include_once_expression"):
-                self._extract_include(child, result)
+        Uses a *visited* set to avoid processing the same subtree twice.
+        Recurses into **all** children by default so that nested expressions
+        (e.g. calls inside function arguments) are never missed.
+        """
+        if visited is None:
+            visited = set()
+
+        node_key = node.id
+        if node_key in visited:
+            return
+        visited.add(node_key)
+
+        ntype = node.type
+
+        if ntype == "function_definition":
+            self._extract_function(node, source, result)
+        elif ntype == "class_declaration":
+            self._extract_class(node, source, result)
+        elif ntype == "interface_declaration":
+            self._extract_interface(node, source, result)
+        elif ntype == "enum_declaration":
+            self._extract_enum(node, source, result)
+        elif ntype == "method_declaration":
+            self._extract_method(node, source, result)
+        elif ntype == "namespace_use_declaration":
+            self._extract_use(node, result)
+        elif ntype == "function_call_expression":
+            self._extract_function_call(node, result)
+        elif ntype == "member_call_expression":
+            self._extract_member_call(node, result)
+        elif ntype == "scoped_call_expression":
+            self._extract_scoped_call(node, result)
+        elif ntype == "object_creation_expression":
+            self._extract_new_expression(node, result)
+        elif ntype in ("require_expression", "require_once_expression",
+                       "include_expression", "include_once_expression"):
+            self._extract_include(node, result)
+
+        # Universal recursion into all children.
+        for child in node.children:
+            self._walk(child, source, result, visited)
 
     def _extract_function(
         self, node: Node, source: str, result: ParseResult
@@ -122,11 +123,6 @@ class PhpParser(LanguageParser):
 
         self._extract_param_types(node, result)
         self._extract_return_type(node, result)
-
-        # Walk the function body for nested calls
-        body = node.child_by_field_name("body")
-        if body:
-            self._walk(body, source, result, class_name="")
 
     def _extract_class(
         self, node: Node, source: str, result: ParseResult
@@ -165,8 +161,6 @@ class PhpParser(LanguageParser):
                         result.heritage.append((class_name, "implements", sub.text.decode()))
                     elif sub.type == "qualified_name":
                         result.heritage.append((class_name, "implements", self._qualified_name(sub)))
-            elif child.type == "declaration_list":
-                self._walk(child, source, result, class_name=class_name)
 
     def _extract_interface(
         self, node: Node, source: str, result: ParseResult
@@ -197,8 +191,6 @@ class PhpParser(LanguageParser):
                 for sub in child.children:
                     if sub.type == "name":
                         result.heritage.append((name, "extends", sub.text.decode()))
-            elif child.type == "declaration_list":
-                self._walk(child, source, result, class_name=name)
 
     def _extract_enum(
         self, node: Node, source: str, result: ParseResult
@@ -224,7 +216,7 @@ class PhpParser(LanguageParser):
         )
 
     def _extract_method(
-        self, node: Node, source: str, result: ParseResult, class_name: str
+        self, node: Node, source: str, result: ParseResult
     ) -> None:
         """Extract a method declaration inside a class or interface."""
         name_node = node.child_by_field_name("name")
@@ -236,6 +228,7 @@ class PhpParser(LanguageParser):
         end_line = node.end_point[0] + 1
         content = node.text.decode()
         signature = self._build_signature(node, name)
+        class_name = self._find_parent_class_name(node)
 
         result.symbols.append(
             SymbolInfo(
@@ -251,11 +244,6 @@ class PhpParser(LanguageParser):
 
         self._extract_param_types(node, result)
         self._extract_return_type(node, result)
-
-        # Walk method body for calls
-        body = node.child_by_field_name("body")
-        if body:
-            self._walk(body, source, result, class_name=class_name)
 
     def _extract_use(self, node: Node, result: ParseResult) -> None:
         """Extract a ``use`` statement (namespace import)."""
@@ -451,6 +439,18 @@ class PhpParser(LanguageParser):
             elif child.type == "name":
                 parts.append(child.text.decode())
         return "\\".join(parts)
+
+    @staticmethod
+    def _find_parent_class_name(node: Node) -> str:
+        """Walk up the tree to find the enclosing class or interface name."""
+        current = node.parent
+        while current is not None:
+            if current.type in ("class_declaration", "interface_declaration"):
+                name_node = current.child_by_field_name("name")
+                if name_node is not None:
+                    return name_node.text.decode()
+            current = current.parent
+        return ""
 
     @staticmethod
     def _build_signature(node: Node, name: str) -> str:

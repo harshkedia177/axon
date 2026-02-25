@@ -468,14 +468,18 @@ class TypeScriptParser(LanguageParser):
             prop_node = func_node.child_by_field_name("property")
             if prop_node is not None:
                 receiver = obj_node.text.decode() if obj_node else ""
+                prop_text = prop_node.text.decode()
                 result.calls.append(
                     CallInfo(
-                        name=prop_node.text.decode(),
+                        name=prop_text,
                         line=line,
                         receiver=receiver,
                         arguments=arguments,
                     )
                 )
+                # React.createElement(Component, {onClick: handler})
+                if prop_text == "createElement":
+                    self._extract_create_element_refs(node, result)
         elif func_node.type == "identifier":
             name = func_node.text.decode()
             # Skip require() since it's handled as an import.
@@ -515,24 +519,38 @@ class TypeScriptParser(LanguageParser):
                     )
                 )
 
-    _JSX_EVENT_ATTRS: frozenset[str] = frozenset({
-        "onClick", "onChange", "onSubmit", "onBlur", "onFocus",
-        "onKeyDown", "onKeyUp", "onKeyPress", "onInput", "onScroll",
-        "onMouseDown", "onMouseUp", "onMouseEnter", "onMouseLeave",
-        "onDragStart", "onDragEnd", "onDrop", "onTouchStart", "onTouchEnd",
-        "onDoubleClick", "onContextMenu", "onSelect", "onReset",
-        "onLoad", "onError", "onResize", "onClose", "onOpen",
-        "onToggle", "onCancel", "onConfirm",
-    })
-
     def _extract_jsx_callbacks(self, node: Node, result: ParseResult) -> None:
-        """Extract function references from JSX event handler attributes.
+        """Extract component references and callback props from JSX elements.
 
-        Handles patterns like ``onClick={handleClick}`` and
-        ``onChange={this.handleChange}`` by extracting the identifier as
-        a call reference.  Arrow wrappers like ``onClick={() => doThing()}``
-        are handled by the normal call_expression walker.
+        1. If the tag name starts with an uppercase letter it is a React
+           component — emit a CallInfo so the component gets a CALLS edge.
+        2. For any ``on`` + uppercase attribute (e.g. ``onClick``,
+           ``onSave``), extract bare identifiers and member expressions
+           as callback references.
         """
+        line = node.start_point[0] + 1
+
+        # --- Component tag name ---
+        for child in node.children:
+            if child.type == "identifier":
+                tag_name = child.text.decode()
+                if tag_name and tag_name[0].isupper():
+                    result.calls.append(CallInfo(name=tag_name, line=line))
+                break
+            elif child.type == "member_expression":
+                prop = child.child_by_field_name("property")
+                obj = child.child_by_field_name("object")
+                if prop is not None:
+                    result.calls.append(
+                        CallInfo(
+                            name=prop.text.decode(),
+                            line=line,
+                            receiver=obj.text.decode() if obj else "",
+                        )
+                    )
+                break
+
+        # --- Callback props (on* pattern) ---
         for child in node.children:
             if child.type != "jsx_attribute":
                 continue
@@ -548,10 +566,10 @@ class TypeScriptParser(LanguageParser):
                 continue
 
             attr_name = attr_name_node.text.decode()
-            if attr_name not in self._JSX_EVENT_ATTRS:
+            # Match any on + Uppercase pattern (onClick, onSave, onCustomEvent, …)
+            if not (len(attr_name) > 2 and attr_name.startswith("on") and attr_name[2].isupper()):
                 continue
 
-            # Extract the identifier from {handlerName} or {obj.method}
             for expr_child in attr_value_node.children:
                 if expr_child.type == "identifier":
                     result.calls.append(
@@ -572,6 +590,51 @@ class TypeScriptParser(LanguageParser):
                                 receiver=receiver,
                             )
                         )
+
+    def _extract_create_element_refs(self, node: Node, result: ParseResult) -> None:
+        """Extract component and callback refs from ``React.createElement`` calls.
+
+        ``React.createElement(Component, {onClick: handler})`` — the first
+        argument is a component reference (if uppercase identifier) and the
+        second argument may contain ``on*`` callback properties.
+        """
+        args_node = node.child_by_field_name("arguments")
+        if args_node is None:
+            return
+
+        line = node.start_point[0] + 1
+        arg_children = [
+            c for c in args_node.children if c.type not in (",", "(", ")")
+        ]
+
+        # First argument: component name (uppercase identifier = React component)
+        if arg_children:
+            first_arg = arg_children[0]
+            if first_arg.type == "identifier":
+                name = first_arg.text.decode()
+                if name and name[0].isupper():
+                    result.calls.append(CallInfo(name=name, line=line))
+
+        # Second argument: props object — extract on* callback values
+        if len(arg_children) >= 2:
+            props_arg = arg_children[1]
+            if props_arg.type == "object":
+                for prop in props_arg.children:
+                    if prop.type == "pair":
+                        key = prop.child_by_field_name("key")
+                        value = prop.child_by_field_name("value")
+                        if key is None or value is None:
+                            continue
+                        key_text = key.text.decode()
+                        if (
+                            len(key_text) > 2
+                            and key_text.startswith("on")
+                            and key_text[2].isupper()
+                            and value.type == "identifier"
+                        ):
+                            result.calls.append(
+                                CallInfo(name=value.text.decode(), line=line)
+                            )
 
     @staticmethod
     def _extract_identifier_arguments(call_node: Node) -> list[str]:

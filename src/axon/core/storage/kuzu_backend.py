@@ -321,6 +321,23 @@ class KuzuBackend:
             rows.append(result.get_next())
         return rows
 
+    def get_symbols_by_file(self, file_path: str) -> list[list[Any]]:
+        """Return symbol rows for a given file using parameterized queries."""
+        assert self._conn is not None
+        all_rows: list[list[Any]] = []
+        for table in _SEARCHABLE_TABLES:
+            try:
+                result = self._conn.execute(
+                    f"MATCH (n:{table}) WHERE n.file_path = $fp AND n.start_line > 0 "
+                    f"RETURN n.id, n.name, n.file_path, n.start_line, n.end_line",
+                    parameters={"fp": file_path},
+                )
+                while result.has_next():
+                    all_rows.append(result.get_next())
+            except Exception:
+                logger.debug("get_symbols_by_file failed for table %s", table, exc_info=True)
+        return all_rows
+
     def exact_name_search(self, name: str, limit: int = 5) -> list[SearchResult]:
         """Search for nodes with an exact name match across all searchable tables.
 

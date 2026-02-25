@@ -328,9 +328,8 @@ index abc1234..def5678 100644
 class TestHandleDetectChanges:
     def test_parses_diff(self, mock_storage):
         """Successfully parses diff and identifies changed files."""
-        # handle_detect_changes now uses execute_raw() with a Cypher query
-        # to find symbols in the changed file.
-        mock_storage.execute_raw.return_value = [
+        # handle_detect_changes uses get_symbols_by_file() with parameterized queries.
+        mock_storage.get_symbols_by_file.return_value = [
             ["function:src/auth.py:validate", "validate", "src/auth.py", 10, 30],
         ]
 
@@ -351,7 +350,7 @@ class TestHandleDetectChanges:
 
     def test_no_symbols_in_changed_lines(self, mock_storage):
         """Reports file but no symbols when nothing overlaps."""
-        mock_storage.execute_raw.return_value = []
+        mock_storage.get_symbols_by_file.return_value = []
         result = handle_detect_changes(mock_storage, SAMPLE_DIFF)
         assert "src/auth.py" in result
         assert "no indexed symbols" in result

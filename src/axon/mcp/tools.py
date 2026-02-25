@@ -394,11 +394,7 @@ def handle_detect_changes(storage: StorageBackend, diff: str) -> str:
     for file_path, ranges in changed_files.items():
         affected_symbols = []
         try:
-            rows = storage.execute_raw(
-                f"MATCH (n) WHERE n.file_path = '{_escape_cypher(file_path)}' "
-                f"AND n.start_line > 0 "
-                f"RETURN n.id, n.name, n.file_path, n.start_line, n.end_line"
-            )
+            rows = storage.get_symbols_by_file(file_path)
             for row in rows or []:
                 node_id = row[0] or ""
                 name = row[1] or ""

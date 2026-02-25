@@ -116,6 +116,10 @@ class StorageBackend(Protocol):
         """Execute a raw backend-specific query string."""
         ...
 
+    def get_symbols_by_file(self, file_path: str) -> list[list[Any]]:
+        """Return symbol rows ``[id, name, file_path, start_line, end_line]`` for a file."""
+        ...
+
     def exact_name_search(self, name: str, limit: int = 5) -> list[SearchResult]:
         """Search for nodes with an exact name match."""
         ...

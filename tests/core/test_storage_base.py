@@ -147,6 +147,9 @@ class TestStorageBackend:
             def bulk_load(self, graph):
                 pass
 
+            def get_symbols_by_file(self, file_path):
+                return []
+
         assert isinstance(_DummyBackend(), StorageBackend)
 
     def test_non_conforming_class_fails(self) -> None:

@@ -7,7 +7,7 @@ from pathlib import Path
 SUPPORTED_EXTENSIONS: dict[str, str] = {
     ".py": "python",
     ".ts": "typescript",
-    ".tsx": "typescript",
+    ".tsx": "tsx",
     ".js": "javascript",
     ".jsx": "javascript",
     ".mjs": "javascript",

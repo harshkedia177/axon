@@ -74,6 +74,11 @@ def get_parser(language: str) -> LanguageParser:
 
         parser = TypeScriptParser(dialect="typescript")
 
+    elif language == "tsx":
+        from axon.core.parsers.typescript import TypeScriptParser
+
+        parser = TypeScriptParser(dialect="tsx")
+
     elif language == "javascript":
         from axon.core.parsers.typescript import TypeScriptParser
 
@@ -82,7 +87,7 @@ def get_parser(language: str) -> LanguageParser:
     else:
         raise ValueError(
             f"Unsupported language {language!r}. "
-            f"Expected one of: python, typescript, javascript"
+            f"Expected one of: python, typescript, tsx, javascript"
         )
 
     _PARSER_CACHE[language] = parser

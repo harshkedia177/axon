@@ -22,7 +22,7 @@ from axon.core.parsers.base import ImportInfo
 
 logger = logging.getLogger(__name__)
 
-_JS_TS_EXTENSIONS = (".ts", ".js", ".tsx", ".jsx")
+_JS_TS_EXTENSIONS = (".ts", ".js", ".tsx", ".jsx", ".mjs", ".cjs")
 
 def build_file_index(graph: KnowledgeGraph) -> dict[str, str]:
     """Build an index mapping file paths to their graph node IDs.
@@ -64,7 +64,7 @@ def resolve_import_path(
 
     if language == "python":
         return _resolve_python(importing_file, import_info, file_index)
-    if language in ("typescript", "javascript"):
+    if language in ("typescript", "tsx", "javascript"):
         return _resolve_js_ts(importing_file, import_info, file_index)
 
     return None
@@ -115,9 +115,11 @@ def _detect_language(file_path: str) -> str:
     suffix = PurePosixPath(file_path).suffix.lower()
     if suffix == ".py":
         return "python"
-    if suffix in (".ts", ".tsx"):
+    if suffix == ".ts":
         return "typescript"
-    if suffix in (".js", ".jsx"):
+    if suffix == ".tsx":
+        return "tsx"
+    if suffix in (".js", ".jsx", ".mjs", ".cjs"):
         return "javascript"
     return ""
 

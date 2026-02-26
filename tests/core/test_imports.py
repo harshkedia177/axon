@@ -423,3 +423,465 @@ class TestProcessImportsNoDuplicates:
 
         imports_rels = graph.get_relationships_by_type(RelType.IMPORTS)
         assert len(imports_rels) == 1
+
+
+# ---------------------------------------------------------------------------
+# resolve_import_path — Python edge cases
+# ---------------------------------------------------------------------------
+
+
+class TestResolvePythonRelativeEdgeCases:
+    """Edge cases for Python relative import resolution."""
+
+    def test_single_dot_no_remainder(self) -> None:
+        """from . import utils -> resolves to package __init__.py."""
+        g = KnowledgeGraph()
+        for path in ("src/auth/validate.py", "src/auth/__init__.py"):
+            g.add_node(
+                GraphNode(
+                    id=generate_id(NodeLabel.FILE, path),
+                    label=NodeLabel.FILE,
+                    name=path.rsplit("/", 1)[-1],
+                    file_path=path,
+                    language="python",
+                )
+            )
+        index = build_file_index(g)
+
+        imp = ImportInfo(module=".", names=["utils"], is_relative=True)
+        result = resolve_import_path("src/auth/validate.py", imp, index)
+        expected = generate_id(NodeLabel.FILE, "src/auth/__init__.py")
+        assert result == expected
+
+    def test_triple_dot_relative(self) -> None:
+        """from ...config import settings (3 dots = 2 levels up from parent).
+
+        From src/a/b/c/deep.py: parent=src/a/b/c, up 2=src/a, then config -> src/a/config.py.
+        """
+        g = KnowledgeGraph()
+        for path in (
+            "src/a/b/c/deep.py",
+            "src/a/config.py",
+        ):
+            g.add_node(
+                GraphNode(
+                    id=generate_id(NodeLabel.FILE, path),
+                    label=NodeLabel.FILE,
+                    name=path.rsplit("/", 1)[-1],
+                    file_path=path,
+                    language="python",
+                )
+            )
+        index = build_file_index(g)
+
+        imp = ImportInfo(module="...config", names=["settings"], is_relative=True)
+        result = resolve_import_path("src/a/b/c/deep.py", imp, index)
+        expected = generate_id(NodeLabel.FILE, "src/a/config.py")
+        assert result == expected
+
+    def test_relative_with_multi_segment(self) -> None:
+        """from ..foo.bar import baz resolves multi-segment remainder.
+
+        From src/pkg/sub/module.py: parent=src/pkg/sub, up 1=src/pkg,
+        then foo/bar -> src/pkg/foo/bar.py.
+        """
+        g = KnowledgeGraph()
+        for path in (
+            "src/pkg/sub/module.py",
+            "src/pkg/foo/bar.py",
+        ):
+            g.add_node(
+                GraphNode(
+                    id=generate_id(NodeLabel.FILE, path),
+                    label=NodeLabel.FILE,
+                    name=path.rsplit("/", 1)[-1],
+                    file_path=path,
+                    language="python",
+                )
+            )
+        index = build_file_index(g)
+
+        imp = ImportInfo(module="..foo.bar", names=["baz"], is_relative=True)
+        result = resolve_import_path("src/pkg/sub/module.py", imp, index)
+        expected = generate_id(NodeLabel.FILE, "src/pkg/foo/bar.py")
+        assert result == expected
+
+    def test_relative_unresolvable(self) -> None:
+        """Relative import targeting a non-existent file returns None."""
+        g = KnowledgeGraph()
+        g.add_node(
+            GraphNode(
+                id=generate_id(NodeLabel.FILE, "src/app.py"),
+                label=NodeLabel.FILE,
+                name="app.py",
+                file_path="src/app.py",
+                language="python",
+            )
+        )
+        index = build_file_index(g)
+
+        imp = ImportInfo(module=".nonexistent", names=["x"], is_relative=True)
+        result = resolve_import_path("src/app.py", imp, index)
+        assert result is None
+
+    def test_absolute_package_init(self) -> None:
+        """Absolute import of package resolves to __init__.py."""
+        g = KnowledgeGraph()
+        g.add_node(
+            GraphNode(
+                id=generate_id(NodeLabel.FILE, "mypackage/__init__.py"),
+                label=NodeLabel.FILE,
+                name="__init__.py",
+                file_path="mypackage/__init__.py",
+                language="python",
+            )
+        )
+        index = build_file_index(g)
+
+        imp = ImportInfo(module="mypackage", names=["thing"], is_relative=False)
+        result = resolve_import_path("src/main.py", imp, index)
+        expected = generate_id(NodeLabel.FILE, "mypackage/__init__.py")
+        assert result == expected
+
+    def test_absolute_deep_dotted(self) -> None:
+        """Absolute import with deep dotted path resolves correctly."""
+        g = KnowledgeGraph()
+        g.add_node(
+            GraphNode(
+                id=generate_id(NodeLabel.FILE, "src/core/auth/jwt.py"),
+                label=NodeLabel.FILE,
+                name="jwt.py",
+                file_path="src/core/auth/jwt.py",
+                language="python",
+            )
+        )
+        index = build_file_index(g)
+
+        imp = ImportInfo(module="src.core.auth.jwt", names=["decode"], is_relative=False)
+        result = resolve_import_path("app/main.py", imp, index)
+        expected = generate_id(NodeLabel.FILE, "src/core/auth/jwt.py")
+        assert result == expected
+
+
+# ---------------------------------------------------------------------------
+# resolve_import_path — PHP
+# ---------------------------------------------------------------------------
+
+
+def _build_php_index(*paths: str) -> dict[str, str]:
+    """Helper to build a file index from PHP file paths."""
+    g = KnowledgeGraph()
+    for path in paths:
+        g.add_node(
+            GraphNode(
+                id=generate_id(NodeLabel.FILE, path),
+                label=NodeLabel.FILE,
+                name=path.rsplit("/", 1)[-1],
+                file_path=path,
+                language="php",
+            )
+        )
+    return build_file_index(g)
+
+
+class TestResolvePhpNamespace:
+    """PHP namespace (use) resolution via PSR-4 path conversion."""
+
+    def test_direct_namespace_path(self) -> None:
+        r"""use App\Models\User -> App/Models/User.php."""
+        index = _build_php_index("App/Models/User.php")
+
+        imp = ImportInfo(module=r"App\Models\User", names=["User"], is_relative=False)
+        result = resolve_import_path("api/contacts.php", imp, index)
+        expected = generate_id(NodeLabel.FILE, "App/Models/User.php")
+        assert result == expected
+
+    def test_psr4_app_prefix_strip(self) -> None:
+        r"""use App\Services\Auth -> app/Services/Auth.php."""
+        index = _build_php_index("app/Services/Auth.php")
+
+        imp = ImportInfo(module=r"App\Services\Auth", names=["Auth"], is_relative=False)
+        result = resolve_import_path("api/login.php", imp, index)
+        expected = generate_id(NodeLabel.FILE, "app/Services/Auth.php")
+        assert result == expected
+
+    def test_psr4_src_prefix_strip(self) -> None:
+        r"""use App\Util\Helper -> src/Util/Helper.php."""
+        index = _build_php_index("src/Util/Helper.php")
+
+        imp = ImportInfo(module=r"App\Util\Helper", names=["Helper"], is_relative=False)
+        result = resolve_import_path("api/main.php", imp, index)
+        expected = generate_id(NodeLabel.FILE, "src/Util/Helper.php")
+        assert result == expected
+
+    def test_psr4_lib_prefix_strip(self) -> None:
+        r"""use App\SDK\Client -> lib/SDK/Client.php."""
+        index = _build_php_index("lib/SDK/Client.php")
+
+        imp = ImportInfo(module=r"App\SDK\Client", names=["Client"], is_relative=False)
+        result = resolve_import_path("api/main.php", imp, index)
+        expected = generate_id(NodeLabel.FILE, "lib/SDK/Client.php")
+        assert result == expected
+
+    def test_lowercase_first_segment(self) -> None:
+        r"""use MyNamespace\Service -> mynamespace/Service.php."""
+        index = _build_php_index("mynamespace/Service.php")
+
+        imp = ImportInfo(module=r"MyNamespace\Service", names=["Service"], is_relative=False)
+        result = resolve_import_path("api/main.php", imp, index)
+        expected = generate_id(NodeLabel.FILE, "mynamespace/Service.php")
+        assert result == expected
+
+    def test_deeply_nested_namespace(self) -> None:
+        r"""use App\Auth\Services\Token\Manager -> app/Auth/Services/Token/Manager.php."""
+        index = _build_php_index("app/Auth/Services/Token/Manager.php")
+
+        imp = ImportInfo(module=r"App\Auth\Services\Token\Manager", names=["Manager"], is_relative=False)
+        result = resolve_import_path("api/main.php", imp, index)
+        expected = generate_id(NodeLabel.FILE, "app/Auth/Services/Token/Manager.php")
+        assert result == expected
+
+    def test_unresolvable_namespace(self) -> None:
+        """Unknown namespace returns None."""
+        index = _build_php_index("app/Models/User.php")
+
+        imp = ImportInfo(module=r"Vendor\External\Lib", names=["Lib"], is_relative=False)
+        result = resolve_import_path("api/main.php", imp, index)
+        assert result is None
+
+    def test_single_segment_namespace(self) -> None:
+        """Single-segment namespace (no backslash) tries direct path."""
+        index = _build_php_index("SomeClass.php")
+
+        imp = ImportInfo(module="SomeClass", names=["SomeClass"], is_relative=False)
+        result = resolve_import_path("api/main.php", imp, index)
+        expected = generate_id(NodeLabel.FILE, "SomeClass.php")
+        assert result == expected
+
+    def test_empty_module_returns_none(self) -> None:
+        """Empty module string returns None."""
+        index = _build_php_index("app/foo.php")
+
+        imp = ImportInfo(module="", names=[], is_relative=False)
+        result = resolve_import_path("api/main.php", imp, index)
+        assert result is None
+
+
+class TestResolvePhpInclude:
+    """PHP relative include/require resolution."""
+
+    def test_same_dir_include(self) -> None:
+        """require_once 'helpers.php' from api/contacts.php."""
+        index = _build_php_index("api/contacts.php", "api/helpers.php")
+
+        imp = ImportInfo(module="helpers.php", names=[], is_relative=True)
+        result = resolve_import_path("api/contacts.php", imp, index)
+        expected = generate_id(NodeLabel.FILE, "api/helpers.php")
+        assert result == expected
+
+    def test_parent_dir_include(self) -> None:
+        """require_once '../config/db.php' from api/contacts.php."""
+        index = _build_php_index("api/contacts.php", "config/db.php")
+
+        imp = ImportInfo(module="../config/db.php", names=[], is_relative=True)
+        result = resolve_import_path("api/contacts.php", imp, index)
+        expected = generate_id(NodeLabel.FILE, "config/db.php")
+        assert result == expected
+
+    def test_up_two_levels_include(self) -> None:
+        """require_once '../../shared/utils.php' from api/v2/handlers/main.php."""
+        index = _build_php_index("api/v2/handlers/main.php", "api/shared/utils.php")
+
+        imp = ImportInfo(module="../../shared/utils.php", names=[], is_relative=True)
+        result = resolve_import_path("api/v2/handlers/main.php", imp, index)
+        expected = generate_id(NodeLabel.FILE, "api/shared/utils.php")
+        assert result == expected
+
+    def test_subdirectory_include(self) -> None:
+        """require_once 'helpers/format.php' from api/contacts.php."""
+        index = _build_php_index("api/contacts.php", "api/helpers/format.php")
+
+        imp = ImportInfo(module="helpers/format.php", names=[], is_relative=True)
+        result = resolve_import_path("api/contacts.php", imp, index)
+        expected = generate_id(NodeLabel.FILE, "api/helpers/format.php")
+        assert result == expected
+
+    def test_unresolvable_include(self) -> None:
+        """Include of non-existent file returns None."""
+        index = _build_php_index("api/contacts.php")
+
+        imp = ImportInfo(module="nonexistent.php", names=[], is_relative=True)
+        result = resolve_import_path("api/contacts.php", imp, index)
+        assert result is None
+
+
+# ---------------------------------------------------------------------------
+# resolve_import_path — HTML
+# ---------------------------------------------------------------------------
+
+
+def _build_html_index(*paths: str) -> dict[str, str]:
+    """Helper to build a file index for HTML test scenarios."""
+    g = KnowledgeGraph()
+    for path in paths:
+        lang = "html" if path.endswith((".html", ".htm")) else "javascript"
+        g.add_node(
+            GraphNode(
+                id=generate_id(NodeLabel.FILE, path),
+                label=NodeLabel.FILE,
+                name=path.rsplit("/", 1)[-1],
+                file_path=path,
+                language=lang,
+            )
+        )
+    return build_file_index(g)
+
+
+class TestResolveHtmlScript:
+    """HTML <script src> resolution."""
+
+    def test_relative_script_src(self) -> None:
+        """<script src=\"./app.js\"> from public/index.html."""
+        index = _build_html_index("public/index.html", "public/app.js")
+
+        imp = ImportInfo(module="./app.js", names=[], is_relative=True)
+        result = resolve_import_path("public/index.html", imp, index)
+        expected = generate_id(NodeLabel.FILE, "public/app.js")
+        assert result == expected
+
+    def test_bare_relative_script(self) -> None:
+        """<script src=\"assets/vendor/lib.js\"> from public/index.html."""
+        index = _build_html_index("public/index.html", "public/assets/vendor/lib.js")
+
+        imp = ImportInfo(module="assets/vendor/lib.js", names=[], is_relative=True)
+        result = resolve_import_path("public/index.html", imp, index)
+        expected = generate_id(NodeLabel.FILE, "public/assets/vendor/lib.js")
+        assert result == expected
+
+    def test_parent_dir_script(self) -> None:
+        """<script src=\"../shared/utils.js\"> from public/pages/about.html."""
+        index = _build_html_index("public/pages/about.html", "public/shared/utils.js")
+
+        imp = ImportInfo(module="../shared/utils.js", names=[], is_relative=True)
+        result = resolve_import_path("public/pages/about.html", imp, index)
+        expected = generate_id(NodeLabel.FILE, "public/shared/utils.js")
+        assert result == expected
+
+    def test_cdn_url_returns_none(self) -> None:
+        """<script src=\"https://cdn.example.com/lib.js\"> -> None."""
+        index = _build_html_index("public/index.html")
+
+        imp = ImportInfo(module="https://cdn.example.com/lib.js", names=[], is_relative=False)
+        result = resolve_import_path("public/index.html", imp, index)
+        assert result is None
+
+    def test_protocol_relative_returns_none(self) -> None:
+        """<script src=\"//cdn.example.com/lib.js\"> -> None."""
+        index = _build_html_index("public/index.html")
+
+        imp = ImportInfo(module="//cdn.example.com/lib.js", names=[], is_relative=False)
+        result = resolve_import_path("public/index.html", imp, index)
+        assert result is None
+
+    def test_extensionless_resolves_with_js(self) -> None:
+        """<script src=\"./app\"> resolves to app.js if it exists."""
+        index = _build_html_index("public/index.html", "public/app.js")
+
+        imp = ImportInfo(module="./app", names=[], is_relative=True)
+        result = resolve_import_path("public/index.html", imp, index)
+        expected = generate_id(NodeLabel.FILE, "public/app.js")
+        assert result == expected
+
+    def test_extensionless_resolves_with_ts(self) -> None:
+        """<script src=\"./app\"> resolves to app.ts if it exists."""
+        index = _build_html_index("public/index.html", "public/app.ts")
+
+        imp = ImportInfo(module="./app", names=[], is_relative=True)
+        result = resolve_import_path("public/index.html", imp, index)
+        expected = generate_id(NodeLabel.FILE, "public/app.ts")
+        assert result == expected
+
+    def test_empty_module_returns_none(self) -> None:
+        """Empty module string returns None."""
+        index = _build_html_index("public/index.html")
+
+        imp = ImportInfo(module="", names=[], is_relative=True)
+        result = resolve_import_path("public/index.html", imp, index)
+        assert result is None
+
+    def test_unresolvable_script_returns_none(self) -> None:
+        """Script pointing to non-existent file returns None."""
+        index = _build_html_index("public/index.html")
+
+        imp = ImportInfo(module="./missing.js", names=[], is_relative=True)
+        result = resolve_import_path("public/index.html", imp, index)
+        assert result is None
+
+
+# ---------------------------------------------------------------------------
+# resolve_import_path — JS/TS edge cases
+# ---------------------------------------------------------------------------
+
+
+class TestResolveJsTsEdgeCases:
+    """Additional JS/TS resolution edge cases."""
+
+    def test_ts_parent_dir_import(self) -> None:
+        """import from '../utils' resolves correctly."""
+        g = KnowledgeGraph()
+        for path in ("lib/sub/index.ts", "lib/utils.ts"):
+            g.add_node(
+                GraphNode(
+                    id=generate_id(NodeLabel.FILE, path),
+                    label=NodeLabel.FILE,
+                    name=path.rsplit("/", 1)[-1],
+                    file_path=path,
+                    language="typescript",
+                )
+            )
+        index = build_file_index(g)
+
+        imp = ImportInfo(module="../utils", names=["foo"], is_relative=False)
+        result = resolve_import_path("lib/sub/index.ts", imp, index)
+        expected = generate_id(NodeLabel.FILE, "lib/utils.ts")
+        assert result == expected
+
+    def test_js_with_explicit_extension(self) -> None:
+        """import './utils.js' with explicit .js extension."""
+        g = KnowledgeGraph()
+        for path in ("src/index.js", "src/utils.js"):
+            g.add_node(
+                GraphNode(
+                    id=generate_id(NodeLabel.FILE, path),
+                    label=NodeLabel.FILE,
+                    name=path.rsplit("/", 1)[-1],
+                    file_path=path,
+                    language="javascript",
+                )
+            )
+        index = build_file_index(g)
+
+        imp = ImportInfo(module="./utils.js", names=["foo"], is_relative=False)
+        result = resolve_import_path("src/index.js", imp, index)
+        expected = generate_id(NodeLabel.FILE, "src/utils.js")
+        assert result == expected
+
+    def test_tsx_extension_resolution(self) -> None:
+        """import './Button' resolves to Button.tsx."""
+        g = KnowledgeGraph()
+        for path in ("src/App.tsx", "src/Button.tsx"):
+            g.add_node(
+                GraphNode(
+                    id=generate_id(NodeLabel.FILE, path),
+                    label=NodeLabel.FILE,
+                    name=path.rsplit("/", 1)[-1],
+                    file_path=path,
+                    language="tsx",
+                )
+            )
+        index = build_file_index(g)
+
+        imp = ImportInfo(module="./Button", names=["Button"], is_relative=False)
+        result = resolve_import_path("src/App.tsx", imp, index)
+        expected = generate_id(NodeLabel.FILE, "src/Button.tsx")
+        assert result == expected

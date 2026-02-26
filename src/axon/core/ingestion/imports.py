@@ -227,15 +227,15 @@ def _resolve_js_ts(
     the importing file's directory.  Bare specifiers (e.g. ``'express'``)
     are treated as external and return ``None``.
     """
+    import posixpath
+
     module = import_info.module
 
     if not module.startswith("."):
         return None
 
-    base = PurePosixPath(importing_file).parent
-    resolved = base / module
-
-    resolved_str = str(PurePosixPath(*resolved.parts))
+    base = str(PurePosixPath(importing_file).parent)
+    resolved_str = posixpath.normpath(posixpath.join(base, module))
 
     return _try_js_ts_paths(resolved_str, file_index)
 
@@ -346,6 +346,8 @@ def _resolve_html(
     Treats relative script sources like JS/TS relative imports.
     Absolute URLs and CDN references are treated as external.
     """
+    import posixpath
+
     module = import_info.module
     if not module:
         return None
@@ -355,9 +357,8 @@ def _resolve_html(
         return None
 
     # Resolve relative to the importing HTML file's directory
-    base = PurePosixPath(importing_file).parent
-    resolved = base / module
-    resolved_str = str(PurePosixPath(*resolved.parts))
+    base = str(PurePosixPath(importing_file).parent)
+    resolved_str = posixpath.normpath(posixpath.join(base, module))
 
     # Try exact match first
     if resolved_str in file_index:

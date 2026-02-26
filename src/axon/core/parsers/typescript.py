@@ -104,6 +104,8 @@ class TypeScriptParser(LanguageParser):
             self._extract_interface(node, source, result)
         elif ntype == "type_alias_declaration":
             self._extract_type_alias(node, source, result)
+        elif ntype == "enum_declaration":
+            self._extract_enum(node, source, result)
         elif ntype == "import_statement":
             self._extract_import(node, source, result)
         elif ntype == "call_expression":
@@ -417,6 +419,27 @@ class TypeScriptParser(LanguageParser):
             SymbolInfo(
                 name=name,
                 kind="type_alias",
+                start_line=start_line,
+                end_line=end_line,
+                content=content,
+            )
+        )
+
+    def _extract_enum(self, node: Node, source: str, result: ParseResult) -> None:
+        """Extract a TypeScript ``enum`` declaration as an enum symbol."""
+        name_node = node.child_by_field_name("name")
+        if name_node is None:
+            return
+
+        name = name_node.text.decode()
+        start_line = node.start_point[0] + 1
+        end_line = node.end_point[0] + 1
+        content = node.text.decode()
+
+        result.symbols.append(
+            SymbolInfo(
+                name=name,
+                kind="enum",
                 start_line=start_line,
                 end_line=end_line,
                 content=content,

@@ -81,6 +81,10 @@ class PhpParser(LanguageParser):
             self._extract_interface(node, source, result)
         elif ntype == "enum_declaration":
             self._extract_enum(node, source, result)
+        elif ntype == "trait_declaration":
+            self._extract_trait(node, source, result)
+        elif ntype == "use_declaration":
+            self._extract_trait_use(node, result)
         elif ntype == "method_declaration":
             self._extract_method(node, source, result)
         elif ntype == "namespace_use_declaration":
@@ -222,10 +226,53 @@ class PhpParser(LanguageParser):
             )
         )
 
+    def _extract_trait(
+        self, node: Node, source: str, result: ParseResult
+    ) -> None:
+        """Extract a trait declaration (treated like a class for graph purposes)."""
+        name_node = node.child_by_field_name("name")
+        if name_node is None:
+            return
+
+        name = name_node.text.decode()
+        start_line = node.start_point[0] + 1
+        end_line = node.end_point[0] + 1
+        content = node.text.decode()
+
+        result.symbols.append(
+            SymbolInfo(
+                name=name,
+                kind="class",  # traits are class-like in the graph
+                start_line=start_line,
+                end_line=end_line,
+                content=content,
+            )
+        )
+
+    def _extract_trait_use(self, node: Node, result: ParseResult) -> None:
+        """Extract ``use TraitName;`` inside a class body as heritage.
+
+        ``use Loggable, Cacheable;`` produces heritage entries similar
+        to ``implements``, allowing trait methods to be resolved when
+        called via ``$this->method()``.
+        """
+        class_name = self._find_parent_class_name(node)
+        if not class_name:
+            return
+
+        for child in node.children:
+            if child.type == "name":
+                trait_name = child.text.decode()
+                result.heritage.append((class_name, "extends", trait_name))
+            elif child.type == "qualified_name":
+                trait_name = self._qualified_name(child)
+                short = trait_name.rsplit("\\", 1)[-1] if "\\" in trait_name else trait_name
+                result.heritage.append((class_name, "extends", short))
+
     def _extract_method(
         self, node: Node, source: str, result: ParseResult
     ) -> None:
-        """Extract a method declaration inside a class or interface."""
+        """Extract a method declaration inside a class, interface, or trait."""
         name_node = node.child_by_field_name("name")
         if name_node is None:
             return
@@ -475,10 +522,10 @@ class PhpParser(LanguageParser):
 
     @staticmethod
     def _find_parent_class_name(node: Node) -> str:
-        """Walk up the tree to find the enclosing class or interface name."""
+        """Walk up the tree to find the enclosing class, interface, or trait name."""
         current = node.parent
         while current is not None:
-            if current.type in ("class_declaration", "interface_declaration"):
+            if current.type in ("class_declaration", "interface_declaration", "trait_declaration"):
                 name_node = current.child_by_field_name("name")
                 if name_node is not None:
                     return name_node.text.decode()

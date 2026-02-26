@@ -39,6 +39,70 @@ _PHP_MAGIC_METHODS: frozenset[str] = frozenset({
     "__debugInfo",
 })
 
+# Interface/protocol methods invoked implicitly by the runtime or framework.
+# These methods are never called directly in user code but are triggered
+# by language constructs (e.g. json_encode calls jsonSerialize, foreach
+# calls getIterator/current/key/next/rewind/valid).
+_IMPLICIT_INTERFACE_METHODS: frozenset[str] = frozenset({
+    # PHP JsonSerializable
+    "jsonSerialize",
+    # PHP Countable
+    "count",
+    # PHP ArrayAccess
+    "offsetGet", "offsetSet", "offsetExists", "offsetUnset",
+    # PHP IteratorAggregate / Iterator
+    "getIterator", "current", "key", "next", "rewind", "valid",
+    # PHP Serializable
+    "serialize", "unserialize",
+    # PHP Stringable (invoked by string casts)
+    "__toString",
+    # Laravel / common conventions
+    "toArray", "toJson",
+    # JavaScript/TypeScript (called by JSON.stringify)
+    "toJSON",
+})
+
+# Framework directory patterns where methods are invoked implicitly by the
+# framework (e.g. Laravel migrations, seeders, console commands, event
+# listeners, service providers, middleware, jobs).  Each tuple is
+# (directory_substring, frozenset_of_method_names).
+_FRAMEWORK_DIR_METHODS: tuple[tuple[str, frozenset[str]], ...] = (
+    # Laravel / generic migrations
+    ("/migrations/", frozenset({"up", "down"})),
+    ("/database/migrations/", frozenset({"up", "down"})),
+    # Seeders
+    ("/seeders/", frozenset({"run"})),
+    ("/seeds/", frozenset({"run"})),
+    # Console commands
+    ("/Commands/", frozenset({"handle"})),
+    ("/commands/", frozenset({"handle"})),
+    # Event listeners
+    ("/Listeners/", frozenset({"handle"})),
+    ("/listeners/", frozenset({"handle"})),
+    # Service providers
+    ("/Providers/", frozenset({"register", "boot"})),
+    # Middleware
+    ("/Middleware/", frozenset({"handle"})),
+    ("/middleware/", frozenset({"handle"})),
+    # Jobs / queue workers
+    ("/Jobs/", frozenset({"handle"})),
+    ("/jobs/", frozenset({"handle"})),
+)
+
+
+def _is_framework_method(name: str, file_path: str) -> bool:
+    """Return ``True`` if *name* is a framework-invoked method in a framework directory.
+
+    Methods like ``up()``/``down()`` in migration files, ``handle()`` in
+    command/listener files, ``register()``/``boot()`` in service providers,
+    etc. are invoked by the framework, never directly by user code.
+    """
+    for dir_pattern, method_names in _FRAMEWORK_DIR_METHODS:
+        if dir_pattern in file_path and name in method_names:
+            return True
+    return False
+
+
 def _is_test_method(name: str) -> bool:
     """Return ``True`` if *name* follows PHPUnit / JUnit test convention.
 
@@ -224,6 +288,7 @@ def _is_exempt(
         or _is_python_public_api(name, file_path)
         or _is_html_file(file_path)
         or _is_example_file(file_path)
+        or _is_framework_method(name, file_path)
     )
 
 def _clear_override_false_positives(graph: KnowledgeGraph) -> int:
@@ -413,6 +478,8 @@ def process_dead_code(graph: KnowledgeGraph) -> int:
             if _has_typing_stub_decorator(node):
                 continue
             if _is_enum_class(node, label):
+                continue
+            if label == NodeLabel.METHOD and node.name in _IMPLICIT_INTERFACE_METHODS:
                 continue
 
             node.is_dead = True

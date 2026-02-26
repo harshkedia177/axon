@@ -302,3 +302,66 @@ class TestMixedExtraction:
 
         # Calls from inline <script>
         assert "setupListeners" in call_names or "initPage" in call_names
+
+
+# ---------------------------------------------------------------------------
+# CSS <link> tag extraction
+# ---------------------------------------------------------------------------
+
+
+class TestCssLinkExtraction:
+    """<link rel="stylesheet" href="..."> tags produce ImportInfo entries."""
+
+    def test_stylesheet_link(self, parser: HtmlParser) -> None:
+        html = '<link rel="stylesheet" href="styles.css">'
+        result = parser.parse(html, "index.html")
+        assert len(result.imports) == 1
+        assert result.imports[0].module == "styles.css"
+        assert result.imports[0].is_relative is True
+
+    def test_stylesheet_link_relative(self, parser: HtmlParser) -> None:
+        html = '<link rel="stylesheet" href="./assets/public.css?v=7">'
+        result = parser.parse(html, "index.html")
+        assert len(result.imports) == 1
+        assert result.imports[0].module == "./assets/public.css?v=7"
+        assert result.imports[0].is_relative is True
+
+    def test_stylesheet_link_absolute(self, parser: HtmlParser) -> None:
+        html = '<link rel="stylesheet" href="https://cdn.example.com/style.css">'
+        result = parser.parse(html, "index.html")
+        assert len(result.imports) == 1
+        assert result.imports[0].is_relative is False
+
+    def test_stylesheet_link_site_root(self, parser: HtmlParser) -> None:
+        html = '<link rel="stylesheet" href="/assets/vendor/leaflet/leaflet.css">'
+        result = parser.parse(html, "index.html")
+        assert len(result.imports) == 1
+        assert result.imports[0].module == "/assets/vendor/leaflet/leaflet.css"
+
+    def test_non_stylesheet_link_ignored(self, parser: HtmlParser) -> None:
+        html = '<link rel="icon" href="favicon.ico">'
+        result = parser.parse(html, "index.html")
+        assert len(result.imports) == 0
+
+    def test_link_no_href_ignored(self, parser: HtmlParser) -> None:
+        html = '<link rel="stylesheet">'
+        result = parser.parse(html, "index.html")
+        assert len(result.imports) == 0
+
+    def test_link_no_rel_ignored(self, parser: HtmlParser) -> None:
+        html = '<link href="styles.css">'
+        result = parser.parse(html, "index.html")
+        assert len(result.imports) == 0
+
+    def test_mixed_scripts_and_links(self, parser: HtmlParser) -> None:
+        html = """<html><head>
+    <link rel="stylesheet" href="styles.css">
+    <script src="app.js"></script>
+    <link rel="stylesheet" href="theme.css">
+</head></html>"""
+        result = parser.parse(html, "index.html")
+        modules = [imp.module for imp in result.imports]
+        assert "styles.css" in modules
+        assert "app.js" in modules
+        assert "theme.css" in modules
+        assert len(result.imports) == 3

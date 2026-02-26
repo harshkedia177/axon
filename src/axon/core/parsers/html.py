@@ -70,6 +70,24 @@ class _HtmlWalker(HTMLParser):
                 self._script_start_line = line
                 self._script_content_parts = []
 
+        elif tag == "link":
+            # Capture <link rel="stylesheet" href="..."> as imports
+            rel = None
+            href = None
+            for attr_name, attr_val in attrs:
+                if attr_name == "rel":
+                    rel = attr_val
+                elif attr_name == "href" and attr_val:
+                    href = attr_val
+            if rel == "stylesheet" and href:
+                self.imports.append(
+                    ImportInfo(
+                        module=href,
+                        names=[],
+                        is_relative=href.startswith(".") or not href.startswith(("http://", "https://", "//")),
+                    )
+                )
+
         # Extract event handler attributes
         for attr_name, attr_val in attrs:
             if attr_name and attr_name.lower() in _EVENT_HANDLER_ATTRS and attr_val:

@@ -817,6 +817,75 @@ class TestResolveHtmlScript:
         result = resolve_import_path("public/index.html", imp, index)
         assert result is None
 
+    def test_query_string_stripped(self) -> None:
+        """<script src=\"app.js?v=2.0\"> resolves after stripping query string."""
+        index = _build_html_index("dashboard/index.html", "dashboard/app.js")
+
+        imp = ImportInfo(module="app.js?v=2.0", names=[], is_relative=True)
+        result = resolve_import_path("dashboard/index.html", imp, index)
+        expected = generate_id(NodeLabel.FILE, "dashboard/app.js")
+        assert result == expected
+
+    def test_query_string_with_version_hash(self) -> None:
+        """<script src=\"bundle.js?v=20260217b\"> strips complex query strings."""
+        index = _build_html_index("dashboard/page.html", "dashboard/bundle.js")
+
+        imp = ImportInfo(module="bundle.js?v=20260217b", names=[], is_relative=True)
+        result = resolve_import_path("dashboard/page.html", imp, index)
+        expected = generate_id(NodeLabel.FILE, "dashboard/bundle.js")
+        assert result == expected
+
+    def test_absolute_path_site_root(self) -> None:
+        """/assets/vendor/react.js resolves to repo-relative path."""
+        index = _build_html_index(
+            "dashboard/index.html",
+            "assets/vendor/react.js",
+        )
+
+        imp = ImportInfo(module="/assets/vendor/react.js", names=[], is_relative=False)
+        result = resolve_import_path("dashboard/index.html", imp, index)
+        expected = generate_id(NodeLabel.FILE, "assets/vendor/react.js")
+        assert result == expected
+
+    def test_absolute_path_with_query_string(self) -> None:
+        """/assets/app.js?v=3 strips query and resolves from root."""
+        index = _build_html_index("dashboard/index.html", "assets/app.js")
+
+        imp = ImportInfo(module="/assets/app.js?v=3", names=[], is_relative=False)
+        result = resolve_import_path("dashboard/index.html", imp, index)
+        expected = generate_id(NodeLabel.FILE, "assets/app.js")
+        assert result == expected
+
+    def test_css_link_resolves(self) -> None:
+        """<link rel=\"stylesheet\" href=\"styles.css\"> resolves as import."""
+        index = _build_html_index("dashboard/index.html", "dashboard/styles.css")
+
+        imp = ImportInfo(module="styles.css", names=[], is_relative=True)
+        result = resolve_import_path("dashboard/index.html", imp, index)
+        expected = generate_id(NodeLabel.FILE, "dashboard/styles.css")
+        assert result == expected
+
+    def test_css_link_absolute_path(self) -> None:
+        """/assets/vendor/leaflet.css resolves from repo root."""
+        index = _build_html_index(
+            "dashboard/index.html",
+            "assets/vendor/leaflet.css",
+        )
+
+        imp = ImportInfo(module="/assets/vendor/leaflet.css", names=[], is_relative=False)
+        result = resolve_import_path("dashboard/index.html", imp, index)
+        expected = generate_id(NodeLabel.FILE, "assets/vendor/leaflet.css")
+        assert result == expected
+
+    def test_css_link_with_query_string(self) -> None:
+        """<link href=\"public.css?v=7\"> strips query string."""
+        index = _build_html_index("public/features.html", "public/public.css")
+
+        imp = ImportInfo(module="public.css?v=7", names=[], is_relative=True)
+        result = resolve_import_path("public/features.html", imp, index)
+        expected = generate_id(NodeLabel.FILE, "public/public.css")
+        assert result == expected
+
 
 # ---------------------------------------------------------------------------
 # resolve_import_path — JS/TS edge cases

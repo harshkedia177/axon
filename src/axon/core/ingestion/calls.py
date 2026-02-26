@@ -142,6 +142,11 @@ def resolve_call(
         if result is not None:
             return result, 1.0
 
+    if receiver in ("parent", "super"):
+        result = _resolve_parent_method(name, file_path, call_index, graph)
+        if result is not None:
+            return result, 0.9
+
     # Without type info the receiver doesn't help — fall through to name-based resolution.
     candidate_ids = call_index.get(name, [])
     if not candidate_ids:
@@ -199,6 +204,50 @@ def _resolve_self_method(
         ):
             return nid
     return None
+
+def _resolve_parent_method(
+    method_name: str,
+    file_path: str,
+    call_index: dict[str, list[str]],
+    graph: KnowledgeGraph,
+) -> str | None:
+    """Resolve ``parent::method()`` or ``super().method()`` to the parent class method.
+
+    Finds the calling class in *file_path*, walks EXTENDS edges to find parent
+    classes, then looks for a method with *method_name* on each parent.
+    """
+    # Find all classes in the same file to identify the calling class.
+    caller_class_names: list[str] = []
+    for node in graph.get_nodes_by_label(NodeLabel.CLASS):
+        if node.file_path == file_path:
+            caller_class_names.append(node.name)
+
+    # Also check methods in this file to find class names.
+    for node in graph.get_nodes_by_label(NodeLabel.METHOD):
+        if node.file_path == file_path and node.class_name:
+            if node.class_name not in caller_class_names:
+                caller_class_names.append(node.class_name)
+
+    # For each class, look up EXTENDS relationships and find parent methods.
+    for class_name in caller_class_names:
+        class_id = generate_id(NodeLabel.CLASS, file_path, class_name)
+        extends_rels = graph.get_outgoing(class_id, RelType.EXTENDS)
+        for rel in extends_rels:
+            parent_node = graph.get_node(rel.target)
+            if parent_node is None:
+                continue
+            # Look for the method on the parent class.
+            for nid in call_index.get(method_name, []):
+                node = graph.get_node(nid)
+                if (
+                    node is not None
+                    and node.label == NodeLabel.METHOD
+                    and node.class_name == parent_node.name
+                ):
+                    return nid
+
+    return None
+
 
 def _resolve_via_imports(
     name: str,

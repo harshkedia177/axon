@@ -341,10 +341,12 @@ def _resolve_html(
     import_info: ImportInfo,
     file_index: dict[str, str],
 ) -> str | None:
-    """Resolve an HTML ``<script src>`` to a file node ID.
+    """Resolve an HTML ``<script src>`` or ``<link href>`` to a file node ID.
 
     Treats relative script sources like JS/TS relative imports.
     Absolute URLs and CDN references are treated as external.
+    Site-root paths (``/assets/...``) are converted to repo-relative paths.
+    Query strings (``?v=2.0``) are stripped before resolution.
     """
     import posixpath
 
@@ -356,9 +358,19 @@ def _resolve_html(
     if module.startswith(("http://", "https://", "//")):
         return None
 
-    # Resolve relative to the importing HTML file's directory
-    base = str(PurePosixPath(importing_file).parent)
-    resolved_str = posixpath.normpath(posixpath.join(base, module))
+    # Strip query strings (e.g. "app.js?v=2.0" -> "app.js")
+    if "?" in module:
+        module = module.split("?")[0]
+
+    # Site-root absolute paths (e.g. "/assets/vendor/react.js" -> "assets/vendor/react.js")
+    if module.startswith("/"):
+        module = module.lstrip("/")
+        # For absolute paths, resolve against repo root (not importing file's dir)
+        resolved_str = module
+    else:
+        # Resolve relative to the importing HTML file's directory
+        base = str(PurePosixPath(importing_file).parent)
+        resolved_str = posixpath.normpath(posixpath.join(base, module))
 
     # Try exact match first
     if resolved_str in file_index:

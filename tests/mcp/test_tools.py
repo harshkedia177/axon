@@ -381,11 +381,13 @@ class TestHandleCypher:
         assert "no results" in result.lower()
 
     def test_query_error(self, mock_storage):
-        """Returns error message when query execution fails."""
+        """Returns sanitized error message when query execution fails."""
         mock_storage.execute_read_query.side_effect = RuntimeError("Syntax error")
         result = handle_cypher(mock_storage, "INVALID QUERY")
         assert "failed" in result.lower()
-        assert "Syntax error" in result
+        # ERR-1: internal details are logged, not exposed to client
+        assert "Syntax error" not in result
+        assert "server logs" in result.lower()
 
 
 # ---------------------------------------------------------------------------

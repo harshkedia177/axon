@@ -81,11 +81,11 @@ neo4j = [
 
 [package.metadata]
 requires-dist = [
-    { name = "fastembed", specifier = ">=0.7.0" },
+    { name = "fastembed", specifier = ">=0.7.0,<1.0.0" },
     { name = "igraph", specifier = ">=1.0.0" },
-    { name = "kuzu", specifier = ">=0.11.0" },
+    { name = "kuzu", specifier = ">=0.11.0,<1.0.0" },
     { name = "leidenalg", specifier = ">=0.11.0" },
-    { name = "mcp", specifier = ">=1.0.0" },
+    { name = "mcp", specifier = ">=1.0.0,<2.0.0" },
     { name = "neo4j", marker = "extra == 'neo4j'", specifier = ">=5.0.0" },
     { name = "pathspec", specifier = ">=1.0.4" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },

@@ -322,6 +322,61 @@ def _resolve_receiver_method(
         _add_calls_edge(source_id, target, 0.8, graph, seen)
 
 
+def _build_global_return_types(parse_data: list[FileParseData]) -> dict[str, list[str]]:
+    """Build a global mapping from function names to their return type names.
+
+    Scans all files' symbols and type_refs to find functions with return type
+    annotations.  Used to resolve cross-file factory patterns like
+    ``$client = getMessagingClient()`` where the factory is in another file.
+    """
+    # First pass: collect function name -> (start_line, end_line, file_path).
+    func_ranges: dict[str, list[tuple[int, int, str]]] = {}
+    for fpd in parse_data:
+        for sym in fpd.parse_result.symbols:
+            if sym.kind == "function":
+                func_ranges.setdefault(sym.name, []).append(
+                    (sym.start_line, sym.end_line, fpd.file_path)
+                )
+
+    # Second pass: match return type_refs to functions.
+    result: dict[str, list[str]] = {}
+    for fpd in parse_data:
+        for tref in fpd.parse_result.type_refs:
+            if tref.kind != "return":
+                continue
+            for name, ranges in func_ranges.items():
+                for start, end, fpath in ranges:
+                    if fpath == fpd.file_path and start <= tref.line <= end:
+                        result.setdefault(name, []).append(tref.name)
+
+    return result
+
+
+def _enrich_variable_types(
+    parse_data: list[FileParseData],
+    global_return_types: dict[str, list[str]],
+) -> None:
+    """Resolve cross-file ``__call__`` sentinels in per-file variable_types.
+
+    The PHP parser stores ``["__call__functionName"]`` for assignments like
+    ``$client = getMessagingClient()`` when the function is defined in a
+    different file.  This function resolves those sentinels using the global
+    function-return-type mapping.
+    """
+    for fpd in parse_data:
+        vt = fpd.parse_result.variable_types
+        for var_name, types in list(vt.items()):
+            if len(types) == 1 and types[0].startswith("__call__"):
+                func_name = types[0][8:]  # strip "__call__" prefix
+                resolved = global_return_types.get(func_name)
+                if resolved:
+                    vt[var_name] = resolved
+                else:
+                    # Cannot resolve — remove the sentinel so it doesn't
+                    # interfere with receiver matching.
+                    del vt[var_name]
+
+
 def process_calls(
     parse_data: list[FileParseData],
     graph: KnowledgeGraph,
@@ -345,6 +400,10 @@ def process_calls(
         parse_data: File parse results from the parser phase.
         graph: The knowledge graph to populate with CALLS relationships.
     """
+    # Enrich variable type mappings with cross-file return type information.
+    global_return_types = _build_global_return_types(parse_data)
+    _enrich_variable_types(parse_data, global_return_types)
+
     call_index = build_name_index(graph, _CALLABLE_LABELS)
     file_sym_index = build_file_symbol_index(graph, _CALLABLE_LABELS)
     seen: set[str] = set()
@@ -400,10 +459,20 @@ def process_calls(
                     if recv_id is not None:
                         _add_calls_edge(source_id, recv_id, recv_conf, graph, seen)
 
-                    _resolve_receiver_method(
-                        receiver, call.name, source_id, fpd.file_path,
-                        call_index, graph, seen,
-                    )
+                    # Try inferred variable types first (e.g. $client = getFactory()
+                    # where getFactory returns LinqClient|BlueBubblesClient).
+                    inferred_types = fpd.parse_result.variable_types.get(receiver)
+                    if inferred_types:
+                        for class_name in inferred_types:
+                            _resolve_receiver_method(
+                                class_name, call.name, source_id, fpd.file_path,
+                                call_index, graph, seen,
+                            )
+                    else:
+                        _resolve_receiver_method(
+                            receiver, call.name, source_id, fpd.file_path,
+                            call_index, graph, seen,
+                        )
 
         # Decorators are implicit calls — @cost_decorator on a function is
         # equivalent to calling cost_decorator(func).  Create CALLS edges

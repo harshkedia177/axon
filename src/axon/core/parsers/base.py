@@ -61,6 +61,9 @@ class ParseResult:
         default_factory=list
     )  # (class_name, kind, parent_name) where kind is "extends" or "implements"
     exports: list[str] = field(default_factory=list)  # names from __all__ or export statements
+    variable_types: dict[str, list[str]] = field(
+        default_factory=dict
+    )  # var_name -> [ClassName, ...] inferred from factory return types
 
 class LanguageParser(ABC):
     """Base interface for language-specific parsers."""

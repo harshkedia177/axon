@@ -45,12 +45,16 @@ class PhpParser(LanguageParser):
         """Parse PHP source and return structured information."""
         tree = self._parser.parse(content.encode("utf-8"))
         result = ParseResult()
-        self._walk(tree.root_node, content, result)
+        # Track $var = functionCall() assignments for type inference.
+        var_assignments: dict[str, str] = {}  # var_name -> called_function_name
+        self._walk(tree.root_node, content, result, var_assignments=var_assignments)
+        self._resolve_variable_types(result, var_assignments)
         return result
 
     def _walk(
         self, node: Node, source: str, result: ParseResult,
         visited: set[int] | None = None,
+        var_assignments: dict[str, str] | None = None,
     ) -> None:
         """Recursively walk the AST to extract definitions, imports, and calls.
 
@@ -91,10 +95,12 @@ class PhpParser(LanguageParser):
         elif ntype in ("require_expression", "require_once_expression",
                        "include_expression", "include_once_expression"):
             self._extract_include(node, result)
+        elif ntype == "assignment_expression" and var_assignments is not None:
+            self._extract_assignment(node, var_assignments)
 
         # Universal recursion into all children.
         for child in node.children:
-            self._walk(child, source, result, visited)
+            self._walk(child, source, result, visited, var_assignments)
 
     def _extract_function(
         self, node: Node, source: str, result: ParseResult
@@ -424,6 +430,19 @@ class PhpParser(LanguageParser):
                             line=child.start_point[0] + 1,
                         )
                     )
+            elif child.type == "union_type":
+                # Handle union return types like LinqClient|BlueBubblesClient.
+                for sub in child.children:
+                    if sub.type in ("named_type", "optional_type"):
+                        type_name = self._extract_type_name_from_node(sub)
+                        if type_name and type_name.lower() not in _BUILTIN_TYPES:
+                            result.type_refs.append(
+                                TypeRef(
+                                    name=type_name,
+                                    kind="return",
+                                    line=sub.start_point[0] + 1,
+                                )
+                            )
             elif child.type == "primitive_type":
                 pass  # Skip built-in return types
 
@@ -483,6 +502,101 @@ class PhpParser(LanguageParser):
         if return_type:
             sig += f": {return_type}"
         return sig
+
+    @staticmethod
+    def _extract_assignment(
+        node: Node, var_assignments: dict[str, str]
+    ) -> None:
+        """Track ``$var = functionCall()`` and ``$var = new ClassName()``.
+
+        Populates *var_assignments* with ``{var_name: function_or_class_name}``
+        so that later ``$var->method()`` calls can be resolved via the
+        function's return type or the class name.
+        """
+        left = node.child_by_field_name("left")
+        right = node.child_by_field_name("right")
+        if left is None or right is None:
+            return
+
+        # LHS must be a simple variable ($var, not $obj->prop).
+        if left.type != "variable_name":
+            return
+        var_name = ""
+        for child in left.children:
+            if child.type == "name":
+                var_name = child.text.decode()
+        if not var_name:
+            return
+
+        # RHS: function_call_expression → track the called function name.
+        if right.type == "function_call_expression":
+            func_node = right.child_by_field_name("function")
+            if func_node is not None:
+                if func_node.type == "name":
+                    var_assignments[var_name] = func_node.text.decode()
+                elif func_node.type == "qualified_name":
+                    text = func_node.text.decode()
+                    var_assignments[var_name] = text.rsplit("\\", 1)[-1] if "\\" in text else text
+
+        # RHS: new ClassName() → variable type is the class directly.
+        elif right.type == "object_creation_expression":
+            for child in right.children:
+                if child.type == "name":
+                    var_assignments[var_name] = f"__new__{child.text.decode()}"
+                    break
+                elif child.type == "qualified_name":
+                    text = child.text.decode()
+                    short = text.rsplit("\\", 1)[-1] if "\\" in text else text
+                    var_assignments[var_name] = f"__new__{short}"
+                    break
+
+    @staticmethod
+    def _resolve_variable_types(
+        result: ParseResult, var_assignments: dict[str, str]
+    ) -> None:
+        """Build ``result.variable_types`` from assignments and return type hints.
+
+        For ``$client = getMessagingClient()`` where ``getMessagingClient``
+        has return type ``LinqClient|BlueBubblesClient``, produces:
+        ``{"client": ["LinqClient", "BlueBubblesClient"]}``.
+
+        For ``$client = new LinqClient()`` produces:
+        ``{"client": ["LinqClient"]}``.
+
+        Unresolved function-call assignments (where the function is defined
+        in another file) are stored as ``["__call__functionName"]`` sentinel
+        values for cross-file resolution during the call-resolution phase.
+        """
+        if not var_assignments:
+            return
+
+        # Build function_name -> [return_type_names] from same-file type_refs.
+        func_return_types: dict[str, list[str]] = {}
+        for sym in result.symbols:
+            if sym.kind == "function":
+                func_return_types[sym.name] = []
+        for tref in result.type_refs:
+            if tref.kind == "return":
+                for sym in result.symbols:
+                    if sym.kind == "function" and sym.start_line <= tref.line <= sym.end_line:
+                        func_return_types.setdefault(sym.name, []).append(tref.name)
+                        break
+
+        for var_name, source_name in var_assignments.items():
+            # Direct constructor: $var = new ClassName()
+            if source_name.startswith("__new__"):
+                class_name = source_name[7:]
+                result.variable_types[var_name] = [class_name]
+                continue
+
+            # Factory function: $var = getFactory()
+            return_types = func_return_types.get(source_name)
+            if return_types:
+                result.variable_types[var_name] = return_types
+            else:
+                # Function not defined in this file — store a sentinel
+                # for cross-file resolution in the call-resolution phase.
+                result.variable_types[var_name] = [f"__call__{source_name}"]
 
     def _extract_include(self, node: Node, result: ParseResult) -> None:
         """Extract ``require_once``, ``include``, etc. as import references.

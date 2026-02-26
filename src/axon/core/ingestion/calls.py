@@ -161,6 +161,24 @@ def resolve_call(
     # 3. Global fuzzy match -- prefer path proximity to caller, then shortest path.
     return _pick_closest(candidate_ids, file_path, graph), 0.5
 
+def _resolve_same_file(
+    name: str,
+    file_path: str,
+    call_index: dict[str, list[str]],
+    graph: KnowledgeGraph,
+) -> str | None:
+    """Find a symbol with *name* defined in the same file.
+
+    Used to override the call blocklist: if a user defines a function
+    named ``close`` or ``get`` in the same file and calls it, that is
+    clearly intentional and should produce a CALLS edge.
+    """
+    for nid in call_index.get(name, []):
+        node = graph.get_node(nid)
+        if node is not None and node.file_path == file_path:
+            return nid
+    return None
+
 def _resolve_self_method(
     method_name: str,
     file_path: str,
@@ -433,6 +451,15 @@ def process_calls(
                 )
                 if target_id is not None:
                     _add_calls_edge(source_id, target_id, confidence, graph, seen)
+            else:
+                # Blocklisted names still get same-file resolution — if a
+                # user defines a function called "close" or "get" and calls
+                # it in the same file, that's clearly intentional.
+                target_id = _resolve_same_file(
+                    call.name, fpd.file_path, call_index, graph
+                )
+                if target_id is not None:
+                    _add_calls_edge(source_id, target_id, 1.0, graph, seen)
 
             # Callback arguments: bare identifiers passed as arguments
             # (e.g. map(transform, items), Depends(get_db),
@@ -440,6 +467,12 @@ def process_calls(
             # callee is blocklisted — the callback itself may be user code.
             for arg_name in call.arguments:
                 if arg_name in _CALL_BLOCKLIST:
+                    # Still allow same-file resolution for blocklisted callbacks.
+                    arg_target = _resolve_same_file(
+                        arg_name, fpd.file_path, call_index, graph
+                    )
+                    if arg_target is not None:
+                        _add_calls_edge(source_id, arg_target, 0.8, graph, seen)
                     continue
                 arg_call = CallInfo(name=arg_name, line=call.line)
                 arg_id, arg_conf = resolve_call(

@@ -49,6 +49,7 @@ class PhpParser(LanguageParser):
         var_assignments: dict[str, str] = {}  # var_name -> called_function_name
         self._walk(tree.root_node, content, result, var_assignments=var_assignments)
         self._resolve_variable_types(result, var_assignments)
+        self._resolve_string_method_refs(tree.root_node, result)
         return result
 
     def _walk(
@@ -597,6 +598,72 @@ class PhpParser(LanguageParser):
                 # Function not defined in this file — store a sentinel
                 # for cross-file resolution in the call-resolution phase.
                 result.variable_types[var_name] = [f"__call__{source_name}"]
+
+    @staticmethod
+    def _resolve_string_method_refs(root: Node, result: ParseResult) -> None:
+        """Emit synthetic calls for string literals that match method names.
+
+        Handles the PHP dynamic-dispatch pattern where class property arrays
+        contain method name strings used via ``$this->$method()``:
+
+        .. code-block:: php
+
+            private $patterns = ['replace_callback' => 'fixSqlInjection'];
+            // later: $this->$method($code, $match);
+
+        Collects all string literals within class ``property_declaration``
+        nodes, then emits a :class:`CallInfo` for each string that matches
+        a method name defined in the same class.
+        """
+        # Build set of method names per class.
+        class_methods: dict[str, set[str]] = {}
+        for sym in result.symbols:
+            if sym.kind == "method" and sym.class_name:
+                class_methods.setdefault(sym.class_name, set()).add(sym.name)
+
+        if not class_methods:
+            return
+
+        # Collect string literals from class property initializers.
+        def _collect_property_strings(node: Node) -> list[tuple[str, int]]:
+            """Collect (string_value, line) pairs from property declarations."""
+            strings: list[tuple[str, int]] = []
+            if node.type == "string_content":
+                text = node.text.decode()
+                if text.isidentifier() and not text.startswith("__"):
+                    strings.append((text, node.start_point[0] + 1))
+            for child in node.children:
+                strings.extend(_collect_property_strings(child))
+            return strings
+
+        # Walk class declarations looking for property arrays.
+        def _walk_classes(node: Node) -> None:
+            if node.type == "class_declaration":
+                name_node = node.child_by_field_name("name")
+                if name_node is None:
+                    return
+                class_name = name_node.text.decode()
+                methods = class_methods.get(class_name, set())
+                if not methods:
+                    return
+
+                for child in node.children:
+                    if child.type == "declaration_list":
+                        for member in child.children:
+                            if member.type == "property_declaration":
+                                for s, line in _collect_property_strings(member):
+                                    if s in methods:
+                                        result.calls.append(
+                                            CallInfo(
+                                                name=s,
+                                                line=line,
+                                                receiver="this",
+                                            )
+                                        )
+            for child in node.children:
+                _walk_classes(child)
+
+        _walk_classes(root)
 
     def _extract_include(self, node: Node, result: ParseResult) -> None:
         """Extract ``require_once``, ``include``, etc. as import references.

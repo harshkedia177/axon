@@ -77,6 +77,21 @@ def _is_test_file(file_path: str) -> bool:
         or file_path.endswith("Test.php")
     )
 
+def _is_example_file(file_path: str) -> bool:
+    """Return ``True`` if the file is an example/template/sample file.
+
+    Files like ``config.example.php`` or ``settings.sample.py`` are
+    documentation templates, not production code.  Symbols in them should
+    never be flagged as dead code.
+    """
+    return (
+        ".example." in file_path
+        or ".sample." in file_path
+        or ".template." in file_path
+        or "/examples/" in file_path
+        or "/example/" in file_path
+    )
+
 def _is_html_file(file_path: str) -> bool:
     """Return ``True`` if the file is an HTML file.
 
@@ -193,6 +208,7 @@ def _is_exempt(
     - It is a public symbol in a Python ``__init__.py`` file.
     - It is a test lifecycle method (``setUp``, ``tearDown``, etc.).
     - It lives in an HTML file (inline script functions are page-local).
+    - It lives in an example/template file (documentation, not production).
     """
     return (
         is_entry_point
@@ -207,6 +223,7 @@ def _is_exempt(
         or _is_dunder(name)
         or _is_python_public_api(name, file_path)
         or _is_html_file(file_path)
+        or _is_example_file(file_path)
     )
 
 def _clear_override_false_positives(graph: KnowledgeGraph) -> int:

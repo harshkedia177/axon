@@ -20,6 +20,7 @@ class SymbolInfo:
     content: str
     signature: str = ""
     class_name: str = ""  # for methods: the owning class
+    namespace: str = ""  # PHP namespace (e.g. "App\\Services")
     decorators: list[str] = field(default_factory=list)  # e.g. ["staticmethod", "server.list_tools"]
 
 @dataclass

@@ -60,6 +60,11 @@ _IMPLICIT_INTERFACE_METHODS: frozenset[str] = frozenset({
     "toArray", "toJson",
     # JavaScript/TypeScript (called by JSON.stringify)
     "toJSON",
+    # Python conventions (called by serialization frameworks)
+    "to_dict", "as_dict", "to_json", "from_dict", "from_json",
+    # Pydantic v1/v2 (called by framework internals)
+    "dict", "json", "model_dump", "model_dump_json",
+    "model_validate", "model_validate_json",
 })
 
 # Framework directory patterns where methods are invoked implicitly by the

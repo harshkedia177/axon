@@ -47,7 +47,9 @@ class PhpParser(LanguageParser):
         result = ParseResult()
         # Track $var = functionCall() assignments for type inference.
         var_assignments: dict[str, str] = {}  # var_name -> called_function_name
-        self._walk(tree.root_node, content, result, var_assignments=var_assignments)
+        # Track current namespace declaration.
+        namespace: list[str] = [""]  # mutable container for _walk
+        self._walk(tree.root_node, content, result, var_assignments=var_assignments, namespace=namespace)
         self._resolve_variable_types(result, var_assignments)
         self._resolve_string_method_refs(tree.root_node, result)
         return result
@@ -56,6 +58,7 @@ class PhpParser(LanguageParser):
         self, node: Node, source: str, result: ParseResult,
         visited: set[int] | None = None,
         var_assignments: dict[str, str] | None = None,
+        namespace: list[str] | None = None,
     ) -> None:
         """Recursively walk the AST to extract definitions, imports, and calls.
 
@@ -65,6 +68,8 @@ class PhpParser(LanguageParser):
         """
         if visited is None:
             visited = set()
+        if namespace is None:
+            namespace = [""]
 
         node_key = node.id
         if node_key in visited:
@@ -73,20 +78,22 @@ class PhpParser(LanguageParser):
 
         ntype = node.type
 
-        if ntype == "function_definition":
-            self._extract_function(node, source, result)
+        if ntype == "namespace_definition":
+            self._extract_namespace(node, namespace)
+        elif ntype == "function_definition":
+            self._extract_function(node, source, result, namespace=namespace[0])
         elif ntype == "class_declaration":
-            self._extract_class(node, source, result)
+            self._extract_class(node, source, result, namespace=namespace[0])
         elif ntype == "interface_declaration":
-            self._extract_interface(node, source, result)
+            self._extract_interface(node, source, result, namespace=namespace[0])
         elif ntype == "enum_declaration":
-            self._extract_enum(node, source, result)
+            self._extract_enum(node, source, result, namespace=namespace[0])
         elif ntype == "trait_declaration":
-            self._extract_trait(node, source, result)
+            self._extract_trait(node, source, result, namespace=namespace[0])
         elif ntype == "use_declaration":
             self._extract_trait_use(node, result)
         elif ntype == "method_declaration":
-            self._extract_method(node, source, result)
+            self._extract_method(node, source, result, namespace=namespace[0])
         elif ntype == "namespace_use_declaration":
             self._extract_use(node, result)
         elif ntype == "function_call_expression":
@@ -105,10 +112,19 @@ class PhpParser(LanguageParser):
 
         # Universal recursion into all children.
         for child in node.children:
-            self._walk(child, source, result, visited, var_assignments)
+            self._walk(child, source, result, visited, var_assignments, namespace)
+
+    @staticmethod
+    def _extract_namespace(node: Node, namespace: list[str]) -> None:
+        """Extract ``namespace App\\Services;`` and store in the mutable container."""
+        for child in node.children:
+            if child.type == "namespace_name":
+                namespace[0] = child.text.decode()
+                return
 
     def _extract_function(
-        self, node: Node, source: str, result: ParseResult
+        self, node: Node, source: str, result: ParseResult,
+        namespace: str = "",
     ) -> None:
         """Extract a top-level function definition."""
         name_node = node.child_by_field_name("name")
@@ -129,6 +145,7 @@ class PhpParser(LanguageParser):
                 end_line=end_line,
                 content=content,
                 signature=signature,
+                namespace=namespace,
             )
         )
 
@@ -136,7 +153,8 @@ class PhpParser(LanguageParser):
         self._extract_return_type(node, result)
 
     def _extract_class(
-        self, node: Node, source: str, result: ParseResult
+        self, node: Node, source: str, result: ParseResult,
+        namespace: str = "",
     ) -> None:
         """Extract a class declaration with heritage."""
         name_node = node.child_by_field_name("name")
@@ -155,6 +173,7 @@ class PhpParser(LanguageParser):
                 start_line=start_line,
                 end_line=end_line,
                 content=content,
+                namespace=namespace,
             )
         )
 
@@ -174,7 +193,8 @@ class PhpParser(LanguageParser):
                         result.heritage.append((class_name, "implements", self._qualified_name(sub)))
 
     def _extract_interface(
-        self, node: Node, source: str, result: ParseResult
+        self, node: Node, source: str, result: ParseResult,
+        namespace: str = "",
     ) -> None:
         """Extract an interface declaration."""
         name_node = node.child_by_field_name("name")
@@ -193,6 +213,7 @@ class PhpParser(LanguageParser):
                 start_line=start_line,
                 end_line=end_line,
                 content=content,
+                namespace=namespace,
             )
         )
 
@@ -204,7 +225,8 @@ class PhpParser(LanguageParser):
                         result.heritage.append((name, "extends", sub.text.decode()))
 
     def _extract_enum(
-        self, node: Node, source: str, result: ParseResult
+        self, node: Node, source: str, result: ParseResult,
+        namespace: str = "",
     ) -> None:
         """Extract a PHP 8.1+ enum declaration."""
         name_node = node.child_by_field_name("name")
@@ -223,11 +245,13 @@ class PhpParser(LanguageParser):
                 start_line=start_line,
                 end_line=end_line,
                 content=content,
+                namespace=namespace,
             )
         )
 
     def _extract_trait(
-        self, node: Node, source: str, result: ParseResult
+        self, node: Node, source: str, result: ParseResult,
+        namespace: str = "",
     ) -> None:
         """Extract a trait declaration (treated like a class for graph purposes)."""
         name_node = node.child_by_field_name("name")
@@ -246,6 +270,7 @@ class PhpParser(LanguageParser):
                 start_line=start_line,
                 end_line=end_line,
                 content=content,
+                namespace=namespace,
             )
         )
 
@@ -270,7 +295,8 @@ class PhpParser(LanguageParser):
                 result.heritage.append((class_name, "extends", short))
 
     def _extract_method(
-        self, node: Node, source: str, result: ParseResult
+        self, node: Node, source: str, result: ParseResult,
+        namespace: str = "",
     ) -> None:
         """Extract a method declaration inside a class, interface, or trait."""
         name_node = node.child_by_field_name("name")
@@ -293,6 +319,7 @@ class PhpParser(LanguageParser):
                 content=content,
                 signature=signature,
                 class_name=class_name,
+                namespace=namespace,
             )
         )
 
@@ -305,6 +332,7 @@ class PhpParser(LanguageParser):
             if child.type == "namespace_use_clause":
                 qname_node = None
                 alias = ""
+                saw_as = False
                 for sub in child.children:
                     if sub.type == "qualified_name":
                         qname_node = sub
@@ -312,6 +340,10 @@ class PhpParser(LanguageParser):
                         for alias_child in sub.children:
                             if alias_child.type == "name":
                                 alias = alias_child.text.decode()
+                    elif sub.type == "as":
+                        saw_as = True
+                    elif sub.type == "name" and saw_as:
+                        alias = sub.text.decode()
 
                 if qname_node is not None:
                     full_name = self._qualified_name(qname_node)
@@ -722,8 +754,14 @@ class PhpParser(LanguageParser):
         if not path:
             return
 
-        # Normalize: strip leading ./ and resolve relative markers
-        path = path.lstrip("./")
+        # Normalize: strip leading / and ./ then collapse /../ sequences.
+        # __DIR__ . '/helpers/utils.php' → 'helpers/utils.php'
+        # __DIR__ . '/../config.php' → '../config.php'
+        import posixpath
+        path = path.lstrip("/")
+        path = posixpath.normpath(path)
+        if path.startswith("./"):
+            path = path[2:]
 
         result.imports.append(
             ImportInfo(

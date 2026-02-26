@@ -280,11 +280,7 @@ class TestImportExtraction:
         assert "AppUser" in imp.names or "User" in imp.names
 
     def test_grouped_use(self, parser: PhpParser) -> None:
-        code = r"""<?php
-use App\Models\User;
-use App\Models\Role;
-use App\Models\Permission;
-"""
+        code = r"<?php use App\Models\{User, Role, Permission};"
         result = parser.parse(code, "test.php")
         all_names = []
         for imp in result.imports:
@@ -292,6 +288,10 @@ use App\Models\Permission;
         assert "User" in all_names
         assert "Role" in all_names
         assert "Permission" in all_names
+        # Verify fully qualified module paths
+        modules = [imp.module for imp in result.imports]
+        assert r"App\Models\User" in modules
+        assert r"App\Models\Role" in modules
 
 
 # ---------------------------------------------------------------------------

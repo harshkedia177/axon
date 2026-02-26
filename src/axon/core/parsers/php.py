@@ -328,8 +328,12 @@ class PhpParser(LanguageParser):
 
     def _extract_use(self, node: Node, result: ParseResult) -> None:
         """Extract a ``use`` statement (namespace import)."""
+        # For grouped use: capture the namespace prefix (sibling of the group node).
+        prefix = ""
         for child in node.children:
-            if child.type == "namespace_use_clause":
+            if child.type == "namespace_name":
+                prefix = child.text.decode()
+            elif child.type == "namespace_use_clause":
                 qname_node = None
                 alias = ""
                 saw_as = False
@@ -360,24 +364,22 @@ class PhpParser(LanguageParser):
                     )
             elif child.type == "namespace_use_group":
                 # use App\Models\{User, Role};
-                prefix = ""
+                # The group contains namespace_use_clause children directly.
+                # The prefix (e.g. "App\Models") was captured above from
+                # the sibling namespace_name node.
                 for sub in child.children:
-                    if sub.type == "qualified_name" or sub.type == "namespace_name":
-                        prefix = sub.text.decode()
-                    elif sub.type == "namespace_use_group_clause":
-                        for clause_child in sub.children:
-                            if clause_child.type == "namespace_use_clause":
-                                for inner in clause_child.children:
-                                    if inner.type == "name":
-                                        name = inner.text.decode()
-                                        full = f"{prefix}\\{name}" if prefix else name
-                                        result.imports.append(
-                                            ImportInfo(
-                                                module=full,
-                                                names=[name],
-                                                is_relative=False,
-                                            )
-                                        )
+                    if sub.type == "namespace_use_clause":
+                        for inner in sub.children:
+                            if inner.type == "name":
+                                name = inner.text.decode()
+                                full = f"{prefix}\\{name}" if prefix else name
+                                result.imports.append(
+                                    ImportInfo(
+                                        module=full,
+                                        names=[name],
+                                        is_relative=False,
+                                    )
+                                )
 
     # PHP functions that take a callable as a string argument.
     _CALLBACK_FUNCTIONS: frozenset[str] = frozenset({

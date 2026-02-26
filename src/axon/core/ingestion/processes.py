@@ -34,6 +34,33 @@ _PYTHON_DECORATOR_PATTERNS: tuple[str, ...] = (
     "@click.command",
 )
 
+# PHP file-path segments that indicate an entry point (API endpoint, cron job,
+# webhook receiver, controller, or route handler).
+_PHP_ENTRY_PATH_SEGMENTS: tuple[str, ...] = (
+    "/api/",
+    "/routes/",
+    "/controllers/",
+    "/Controllers/",
+    "/cron/",
+    "/webhooks/",
+    "/public/",
+)
+
+# PHP file-name patterns for entry points.
+_PHP_ENTRY_FILE_PATTERNS: tuple[str, ...] = (
+    "-webhook.php",
+    "_webhook.php",
+)
+
+# PHP content patterns that signal a file handles HTTP requests directly.
+_PHP_ENTRY_CONTENT_PATTERNS: tuple[str, ...] = (
+    "$_GET[",
+    "$_POST[",
+    "$_REQUEST[",
+    "$_SERVER['REQUEST_METHOD']",
+    '$_SERVER["REQUEST_METHOD"]',
+)
+
 def find_entry_points(graph: KnowledgeGraph) -> list[GraphNode]:
     """Find functions/methods that serve as execution entry points.
 
@@ -90,6 +117,12 @@ def _is_entry_point(node: GraphNode, graph: KnowledgeGraph) -> bool:
     ):
         return True
 
+    # PHP: top-level functions in cron files are entry points.
+    if node.label == NodeLabel.FUNCTION and node.file_path.endswith(".php"):
+        fp = node.file_path
+        if "/cron/" in fp or fp.startswith("cron/") or fp.rsplit("/", 1)[-1].startswith("cron-"):
+            return True
+
     return False
 
 def _matches_framework_pattern(node: GraphNode) -> bool:
@@ -114,6 +147,27 @@ def _matches_framework_pattern(node: GraphNode) -> bool:
             return True
         if node.is_exported:
             return True
+
+    # PHP patterns
+    if language in ("php", "") or node.file_path.endswith(".php"):
+        # Controller classes/methods
+        if name.endswith("Controller") or (
+            node.class_name and node.class_name.endswith("Controller")
+        ):
+            return True
+        # File-path heuristics: API endpoints, cron jobs, webhooks, etc.
+        fp = node.file_path
+        for seg in _PHP_ENTRY_PATH_SEGMENTS:
+            # Check both "/api/" in path and path starting with "api/".
+            if seg in fp or fp.startswith(seg.lstrip("/")):
+                return True
+        for pat in _PHP_ENTRY_FILE_PATTERNS:
+            if fp.endswith(pat):
+                return True
+        # Content-based: direct HTTP request handling
+        for pattern in _PHP_ENTRY_CONTENT_PATTERNS:
+            if pattern in content:
+                return True
 
     return False
 

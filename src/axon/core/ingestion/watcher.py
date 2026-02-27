@@ -102,8 +102,6 @@ def _compute_dirty_node_ids(storage: StorageBackend, dirty_files: set[str]) -> s
         return set()
 
     dirty_node_ids: set[str] = set()
-
-    # Collect node IDs from dirty files.
     for file_path in dirty_files:
         escaped = file_path.replace("\\", "\\\\").replace("'", "\\'")
         results = storage.execute_raw(
@@ -113,7 +111,6 @@ def _compute_dirty_node_ids(storage: StorageBackend, dirty_files: set[str]) -> s
             if row[0]:
                 dirty_node_ids.add(row[0])
 
-    # Expand to immediate CALLS neighbors (callers + callees).
     neighbor_ids: set[str] = set()
     for node_id in dirty_node_ids:
         for caller in storage.get_callers(node_id):
@@ -130,15 +127,7 @@ def _run_incremental_global_phases(
     dirty_files: set[str],
     run_coupling: bool = False,
 ) -> None:
-    """Run global phases incrementally using graph hydrated from storage.
-
-    1. Load full graph from storage.
-    2. Delete old synthetic nodes (COMMUNITY, PROCESS).
-    3. Run communities, processes, dead code on the hydrated graph.
-    4. Persist new synthetic nodes and update dead flags.
-    5. Optionally re-run coupling if new commits detected.
-    6. Re-embed dirty nodes + their CALLS neighbors.
-    """
+    """Run global phases incrementally using graph hydrated from storage."""
     from axon.core.ingestion.community import process_communities
     from axon.core.ingestion.coupling import process_coupling
     from axon.core.ingestion.dead_code import process_dead_code
@@ -176,7 +165,6 @@ def _run_incremental_global_phases(
     if new_rels:
         storage.add_relationships(new_rels)
 
-    # Update dead flags in storage.
     dead_ids: set[str] = set()
     alive_ids: set[str] = set()
     _SYMBOL_LABELS = (NodeLabel.FUNCTION, NodeLabel.METHOD, NodeLabel.CLASS)
@@ -208,7 +196,6 @@ def _run_incremental_global_phases(
         except Exception:
             logger.warning("Incremental embedding failed", exc_info=True)
 
-    # Rebuild FTS indexes to reflect any changes.
     storage.rebuild_fts_indexes()
 
     logger.info("Incremental global phases complete.")
@@ -278,7 +265,6 @@ async def watch_repo(
             snapshot = dirty_files.copy()
             dirty_files.clear()
 
-            # Check for new commits.
             current_commit = _get_head_sha(repo_path)
             run_coupling = current_commit != last_known_commit
             if run_coupling:

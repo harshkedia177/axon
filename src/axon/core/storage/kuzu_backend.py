@@ -633,22 +633,16 @@ class KuzuBackend:
                 rel_id = f"{rel_type_str}:{src_id}->{tgt_id}"
 
                 props: dict[str, Any] = {}
-                # col 3: confidence
                 if row[3] is not None:
                     props["confidence"] = float(row[3])
-                # col 4: role
                 if row[4] is not None and row[4] != "":
                     props["role"] = str(row[4])
-                # col 5: step_number
                 if row[5] is not None and row[5] != 0:
                     props["step_number"] = int(row[5])
-                # col 6: strength
                 if row[6] is not None and row[6] != 0.0:
                     props["strength"] = float(row[6])
-                # col 7: co_changes
                 if row[7] is not None and row[7] != 0:
                     props["co_changes"] = int(row[7])
-                # col 8: symbols
                 if row[8] is not None and row[8] != "":
                     props["symbols"] = str(row[8])
 

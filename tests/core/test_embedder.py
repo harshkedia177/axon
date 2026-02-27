@@ -16,9 +16,9 @@ import numpy as np
 import pytest
 from unittest.mock import MagicMock, call, patch
 
-from axon.core.embeddings.embedder import embed_graph, EMBEDDABLE_LABELS, _get_model
+from axon.core.embeddings.embedder import embed_graph, embed_nodes, EMBEDDABLE_LABELS, _get_model
 from axon.core.graph.graph import KnowledgeGraph
-from axon.core.graph.model import GraphNode, NodeLabel
+from axon.core.graph.model import GraphNode, GraphRelationship, NodeLabel, RelType, generate_id
 from axon.core.storage.base import NodeEmbedding
 
 
@@ -488,3 +488,111 @@ class TestEmbedGraphBatchProcessing:
         assert embed_call.kwargs.get("batch_size") == 64 or (
             len(embed_call.args) > 1 and embed_call.args[1] == 64
         )
+
+
+# ---------------------------------------------------------------------------
+# Tests — embed_nodes (incremental embedding)
+# ---------------------------------------------------------------------------
+
+
+def _make_incremental_graph() -> KnowledgeGraph:
+    """Build a small graph with two functions that call each other."""
+    graph = KnowledgeGraph()
+    fn_a = GraphNode(
+        id=generate_id(NodeLabel.FUNCTION, "src/a.py", "func_a"),
+        label=NodeLabel.FUNCTION, name="func_a", file_path="src/a.py",
+        signature="def func_a():",
+    )
+    fn_b = GraphNode(
+        id=generate_id(NodeLabel.FUNCTION, "src/b.py", "func_b"),
+        label=NodeLabel.FUNCTION, name="func_b", file_path="src/b.py",
+        signature="def func_b():",
+    )
+    graph.add_node(fn_a)
+    graph.add_node(fn_b)
+    graph.add_relationship(GraphRelationship(
+        id=f"calls:{fn_a.id}->{fn_b.id}",
+        type=RelType.CALLS, source=fn_a.id, target=fn_b.id,
+    ))
+    return graph
+
+
+class TestEmbedNodes:
+    """embed_nodes generates embeddings for a specific set of node IDs."""
+
+    @patch("fastembed.TextEmbedding")
+    def test_embeds_only_requested_nodes(self, mock_te_cls: MagicMock) -> None:
+        """Only the requested node IDs are embedded, not all graph nodes."""
+        graph = _make_incremental_graph()
+        node_ids = {generate_id(NodeLabel.FUNCTION, "src/a.py", "func_a")}
+
+        mock_model = MagicMock()
+        mock_model.embed.return_value = iter([np.array([0.1, 0.2, 0.3])])
+        mock_te_cls.return_value = mock_model
+
+        results = embed_nodes(graph, node_ids)
+
+        result_ids = {emb.node_id for emb in results}
+        assert node_ids == result_ids
+
+    def test_returns_empty_for_empty_set(self) -> None:
+        """An empty node_ids set returns an empty list without calling the model."""
+        graph = _make_incremental_graph()
+        results = embed_nodes(graph, set())
+        assert results == []
+
+    @patch("fastembed.TextEmbedding")
+    def test_skips_non_embeddable_labels(self, mock_te_cls: MagicMock) -> None:
+        """Nodes with non-embeddable labels (e.g. FOLDER) are filtered out."""
+        graph = KnowledgeGraph()
+        folder = GraphNode(
+            id=generate_id(NodeLabel.FOLDER, "src", "src"),
+            label=NodeLabel.FOLDER, name="src", file_path="src",
+        )
+        graph.add_node(folder)
+        results = embed_nodes(graph, {folder.id})
+        assert results == []
+
+    @patch("fastembed.TextEmbedding")
+    def test_skips_missing_node_ids(self, mock_te_cls: MagicMock) -> None:
+        """Node IDs not present in the graph are silently skipped."""
+        graph = _make_incremental_graph()
+        results = embed_nodes(graph, {"function:nonexistent.py:nope"})
+        assert results == []
+
+    @patch("fastembed.TextEmbedding")
+    def test_embeds_both_requested_nodes(self, mock_te_cls: MagicMock) -> None:
+        """When both nodes are requested, both are embedded."""
+        graph = _make_incremental_graph()
+        id_a = generate_id(NodeLabel.FUNCTION, "src/a.py", "func_a")
+        id_b = generate_id(NodeLabel.FUNCTION, "src/b.py", "func_b")
+        node_ids = {id_a, id_b}
+
+        mock_model = MagicMock()
+        mock_model.embed.return_value = iter(
+            [np.array([0.1, 0.2, 0.3]), np.array([0.4, 0.5, 0.6])]
+        )
+        mock_te_cls.return_value = mock_model
+
+        results = embed_nodes(graph, node_ids)
+
+        result_ids = {emb.node_id for emb in results}
+        assert result_ids == node_ids
+        assert len(results) == 2
+
+    @patch("fastembed.TextEmbedding")
+    def test_embedding_values_are_correct(self, mock_te_cls: MagicMock) -> None:
+        """Returned NodeEmbedding objects contain the correct vector values."""
+        graph = _make_incremental_graph()
+        id_a = generate_id(NodeLabel.FUNCTION, "src/a.py", "func_a")
+
+        mock_model = MagicMock()
+        mock_model.embed.return_value = iter([np.array([1.0, 2.0, 3.0])])
+        mock_te_cls.return_value = mock_model
+
+        results = embed_nodes(graph, {id_a})
+
+        assert len(results) == 1
+        assert results[0].node_id == id_a
+        assert isinstance(results[0].embedding, list)
+        assert results[0].embedding == pytest.approx([1.0, 2.0, 3.0])

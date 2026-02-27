@@ -147,6 +147,24 @@ class TestStorageBackend:
             def bulk_load(self, graph):
                 pass
 
+            def load_graph(self):
+                return None
+
+            def delete_synthetic_nodes(self):
+                pass
+
+            def upsert_embeddings(self, embeddings):
+                pass
+
+            def update_dead_flags(self, dead_ids, alive_ids):
+                pass
+
+            def remove_relationships_by_type(self, rel_type):
+                pass
+
+            def rebuild_fts_indexes(self):
+                pass
+
         assert isinstance(_DummyBackend(), StorageBackend)
 
     def test_non_conforming_class_fails(self) -> None:

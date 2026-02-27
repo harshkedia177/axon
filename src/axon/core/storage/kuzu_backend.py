@@ -19,7 +19,7 @@ from typing import Any
 import kuzu
 
 from axon.core.graph.graph import KnowledgeGraph
-from axon.core.graph.model import GraphNode, GraphRelationship, NodeLabel
+from axon.core.graph.model import GraphNode, GraphRelationship, NodeLabel, RelType
 from axon.core.storage.base import NodeEmbedding, SearchResult
 
 logger = logging.getLogger(__name__)
@@ -31,6 +31,8 @@ _LABEL_TO_TABLE: dict[str, str] = {
 }
 
 _LABEL_MAP: dict[str, NodeLabel] = {label.value: label for label in NodeLabel}
+
+_REL_TYPE_MAP: dict[str, RelType] = {rt.value: rt for rt in RelType}
 
 _SEARCHABLE_TABLES: list[str] = [
     t for t in _NODE_TABLE_NAMES
@@ -586,6 +588,137 @@ class KuzuBackend:
             logger.debug("get_indexed_files failed", exc_info=True)
         return mapping
 
+    def load_graph(self) -> KnowledgeGraph:
+        """Reconstruct a full :class:`KnowledgeGraph` from the database."""
+        assert self._conn is not None
+        graph = KnowledgeGraph()
+
+        # -- Load nodes from every table --
+        for table in _NODE_TABLE_NAMES:
+            try:
+                result = self._conn.execute(f"MATCH (n:{table}) RETURN n.*")
+                while result.has_next():
+                    row = result.get_next()
+                    node = self._row_to_node(row)
+                    if node is not None:
+                        graph.add_node(node)
+            except Exception:
+                logger.debug("load_graph: failed to read table %s", table, exc_info=True)
+
+        # -- Load relationships --
+        try:
+            result = self._conn.execute(
+                "MATCH (a)-[r:CodeRelation]->(b) "
+                "RETURN a.id, b.id, r.rel_type, r.confidence, r.role, "
+                "r.step_number, r.strength, r.co_changes, r.symbols"
+            )
+            while result.has_next():
+                row = result.get_next()
+                src_id: str = row[0] or ""
+                tgt_id: str = row[1] or ""
+                rel_type_str: str = row[2] or ""
+
+                rel_type = _REL_TYPE_MAP.get(rel_type_str)
+                if rel_type is None:
+                    continue
+
+                rel_id = f"{rel_type_str}:{src_id}->{tgt_id}"
+
+                props: dict[str, Any] = {}
+                if row[3] is not None:
+                    props["confidence"] = float(row[3])
+                if row[4] is not None and row[4] != "":
+                    props["role"] = str(row[4])
+                if row[5] is not None and row[5] != 0:
+                    props["step_number"] = int(row[5])
+                if row[6] is not None and row[6] != 0.0:
+                    props["strength"] = float(row[6])
+                if row[7] is not None and row[7] != 0:
+                    props["co_changes"] = int(row[7])
+                if row[8] is not None and row[8] != "":
+                    props["symbols"] = str(row[8])
+
+                graph.add_relationship(
+                    GraphRelationship(
+                        id=rel_id,
+                        type=rel_type,
+                        source=src_id,
+                        target=tgt_id,
+                        properties=props,
+                    )
+                )
+        except Exception:
+            logger.error("load_graph: relationship query failed — graph incomplete", exc_info=True)
+            raise
+
+        return graph
+
+    def delete_synthetic_nodes(self) -> None:
+        """Remove all COMMUNITY and PROCESS nodes and their relationships."""
+        assert self._conn is not None
+        for table in ("Community", "Process"):
+            try:
+                self._conn.execute(f"MATCH (n:{table}) DETACH DELETE n")
+            except Exception:
+                logger.debug(
+                    "delete_synthetic_nodes: failed for %s", table, exc_info=True
+                )
+
+    def upsert_embeddings(self, embeddings: list[NodeEmbedding]) -> None:
+        """Insert or update embeddings without wiping existing ones."""
+        assert self._conn is not None
+        for emb in embeddings:
+            try:
+                self._conn.execute(
+                    "MERGE (e:Embedding {node_id: $nid}) SET e.vec = $vec",
+                    parameters={"nid": emb.node_id, "vec": emb.embedding},
+                )
+            except Exception:
+                logger.debug(
+                    "upsert_embeddings failed for %s", emb.node_id, exc_info=True
+                )
+
+    def update_dead_flags(
+        self, dead_ids: set[str], alive_ids: set[str]
+    ) -> None:
+        """Set is_dead=True on *dead_ids* and is_dead=False on *alive_ids*."""
+        assert self._conn is not None
+
+        def _batch_set(ids: set[str], value: bool) -> None:
+            by_table: dict[str, list[str]] = {}
+            for node_id in ids:
+                table = _table_for_id(node_id)
+                if table:
+                    by_table.setdefault(table, []).append(node_id)
+            for table, id_list in by_table.items():
+                try:
+                    self._conn.execute(
+                        f"MATCH (n:{table}) WHERE n.id IN $ids SET n.is_dead = $val",
+                        parameters={"ids": id_list, "val": value},
+                    )
+                except Exception:
+                    logger.debug(
+                        "update_dead_flags failed for table %s", table, exc_info=True
+                    )
+
+        _batch_set(dead_ids, True)
+        _batch_set(alive_ids, False)
+
+    def remove_relationships_by_type(self, rel_type: RelType) -> None:
+        """Delete all relationships of a specific type."""
+        assert self._conn is not None
+        try:
+            self._conn.execute(
+                "MATCH ()-[r:CodeRelation]->() WHERE r.rel_type = $rt DELETE r",
+                parameters={"rt": rel_type.value},
+            )
+        except Exception:
+            logger.debug(
+                "remove_relationships_by_type failed for %s",
+                rel_type.value,
+                exc_info=True,
+            )
+
     def bulk_load(self, graph: KnowledgeGraph) -> None:
         """Replace the entire store with the contents of *graph*.
 
@@ -903,7 +1036,10 @@ class KuzuBackend:
         try:
             nid = node_id or row[0]
             prefix = nid.split(":", 1)[0]
-            label = _LABEL_MAP.get(prefix, NodeLabel.FILE)
+            label = _LABEL_MAP.get(prefix)
+            if label is None:
+                logger.warning("Unknown node label prefix %r in id %s", prefix, nid)
+                return None
 
             return GraphNode(
                 id=row[0],

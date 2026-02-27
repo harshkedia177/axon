@@ -14,6 +14,7 @@ from axon.core.graph.model import (
     RelType,
     generate_id,
 )
+from axon.core.storage.base import NodeEmbedding
 from axon.core.storage.kuzu_backend import KuzuBackend
 
 # ---------------------------------------------------------------------------
@@ -327,3 +328,181 @@ class TestMultipleLabels:
         assert backend.get_node(cls.id) is not None
         assert backend.get_node(fn.id).label == NodeLabel.FUNCTION
         assert backend.get_node(cls.id).label == NodeLabel.CLASS
+
+
+# ---------------------------------------------------------------------------
+# load_graph
+# ---------------------------------------------------------------------------
+
+
+class TestLoadGraph:
+    def test_round_trips_nodes_and_relationships(self, backend: KuzuBackend) -> None:
+        """Store 3 nodes and 2 relationships, load_graph, verify counts and existence."""
+        n1 = _make_node(name="alpha", file_path="src/a.py")
+        n2 = _make_node(name="beta", file_path="src/a.py")
+        n3 = _make_node(label=NodeLabel.CLASS, name="Gamma", file_path="src/a.py")
+        backend.add_nodes([n1, n2, n3])
+
+        r1 = _make_rel(n1.id, n2.id, RelType.CALLS)
+        r2 = _make_rel(n1.id, n3.id, RelType.CALLS)
+        backend.add_relationships([r1, r2])
+
+        graph = backend.load_graph()
+
+        assert graph.node_count == 3
+        assert graph.relationship_count == 2
+        assert graph.get_node(n1.id) is not None
+        assert graph.get_node(n2.id) is not None
+        assert graph.get_node(n3.id) is not None
+
+    def test_preserves_node_properties(self, backend: KuzuBackend) -> None:
+        """Store a node with boolean flags and signature, verify they survive round-trip."""
+        node = GraphNode(
+            id=generate_id(NodeLabel.FUNCTION, "src/d.py", "special"),
+            label=NodeLabel.FUNCTION,
+            name="special",
+            file_path="src/d.py",
+            signature="def special() -> bool",
+            is_dead=True,
+            is_entry_point=True,
+        )
+        backend.add_nodes([node])
+
+        graph = backend.load_graph()
+        loaded = graph.get_node(node.id)
+
+        assert loaded is not None
+        assert loaded.name == "special"
+        assert loaded.signature == "def special() -> bool"
+        assert loaded.is_dead is True
+        assert loaded.is_entry_point is True
+        assert loaded.is_exported is False
+
+    def test_empty_storage_returns_empty_graph(self, backend: KuzuBackend) -> None:
+        """Loading from an empty database returns an empty KnowledgeGraph."""
+        graph = backend.load_graph()
+
+        assert graph.node_count == 0
+        assert graph.relationship_count == 0
+
+
+# ---------------------------------------------------------------------------
+# delete_synthetic_nodes
+# ---------------------------------------------------------------------------
+
+
+class TestDeleteSyntheticNodes:
+    def test_removes_community_and_process_keeps_function(
+        self, backend: KuzuBackend
+    ) -> None:
+        """Store fn + community + process with edges. After delete, only fn remains."""
+        fn = _make_node(name="real_func", file_path="src/a.py")
+        comm = _make_node(
+            label=NodeLabel.COMMUNITY, name="comm_1", file_path=""
+        )
+        proc = _make_node(
+            label=NodeLabel.PROCESS, name="proc_1", file_path=""
+        )
+        backend.add_nodes([fn, comm, proc])
+
+        # Add MEMBER_OF edge (fn -> community) and STEP_IN_PROCESS (fn -> process).
+        r1 = _make_rel(fn.id, comm.id, RelType.MEMBER_OF)
+        r2 = _make_rel(fn.id, proc.id, RelType.STEP_IN_PROCESS)
+        backend.add_relationships([r1, r2])
+
+        backend.delete_synthetic_nodes()
+
+        graph = backend.load_graph()
+        # Only the function node should survive.
+        assert graph.node_count == 1
+        assert graph.get_node(fn.id) is not None
+        assert graph.get_node(comm.id) is None
+        assert graph.get_node(proc.id) is None
+        # All relationships should be gone (targets deleted).
+        assert graph.relationship_count == 0
+
+
+# ---------------------------------------------------------------------------
+# upsert_embeddings
+# ---------------------------------------------------------------------------
+
+
+class TestUpsertEmbeddings:
+    def test_upserts_without_wiping(self, backend: KuzuBackend) -> None:
+        """store_embeddings + upsert_embeddings should result in both existing."""
+        emb_a = NodeEmbedding(node_id="function:src/a.py:alpha", embedding=[1.0, 2.0])
+        emb_b = NodeEmbedding(node_id="function:src/a.py:beta", embedding=[3.0, 4.0])
+
+        backend.store_embeddings([emb_a])
+        backend.upsert_embeddings([emb_b])
+
+        rows = backend.execute_raw(
+            "MATCH (e:Embedding) RETURN e.node_id ORDER BY e.node_id"
+        )
+        node_ids = [r[0] for r in rows]
+        assert "function:src/a.py:alpha" in node_ids
+        assert "function:src/a.py:beta" in node_ids
+
+    def test_updates_existing_embedding(self, backend: KuzuBackend) -> None:
+        """Upserting an existing node_id should update the vector, not duplicate."""
+        emb = NodeEmbedding(node_id="function:src/a.py:alpha", embedding=[1.0, 2.0])
+        backend.store_embeddings([emb])
+
+        updated = NodeEmbedding(
+            node_id="function:src/a.py:alpha", embedding=[9.0, 8.0]
+        )
+        backend.upsert_embeddings([updated])
+
+        rows = backend.execute_raw(
+            "MATCH (e:Embedding) WHERE e.node_id = 'function:src/a.py:alpha' "
+            "RETURN e.vec"
+        )
+        assert len(rows) == 1
+        assert rows[0][0][0] == 9.0
+        assert rows[0][0][1] == 8.0
+
+
+# ---------------------------------------------------------------------------
+# update_dead_flags
+# ---------------------------------------------------------------------------
+
+
+class TestUpdateDeadFlags:
+    def test_sets_dead_and_alive(self, backend: KuzuBackend) -> None:
+        """Mark one node dead and another alive, verify via get_node."""
+        n1 = _make_node(name="func_a", file_path="src/a.py")
+        n2 = _make_node(name="func_b", file_path="src/a.py")
+        backend.add_nodes([n1, n2])
+
+        backend.update_dead_flags(dead_ids={n1.id}, alive_ids={n2.id})
+
+        dead_node = backend.get_node(n1.id)
+        alive_node = backend.get_node(n2.id)
+        assert dead_node is not None
+        assert dead_node.is_dead is True
+        assert alive_node is not None
+        assert alive_node.is_dead is False
+
+
+# ---------------------------------------------------------------------------
+# remove_relationships_by_type
+# ---------------------------------------------------------------------------
+
+
+class TestRemoveRelationshipsByType:
+    def test_removes_only_specified_type(self, backend: KuzuBackend) -> None:
+        """Store CALLS and COUPLED_WITH. Remove COUPLED_WITH. Verify CALLS survives."""
+        n1 = _make_node(name="func_x", file_path="src/a.py")
+        n2 = _make_node(name="func_y", file_path="src/a.py")
+        backend.add_nodes([n1, n2])
+
+        calls_rel = _make_rel(n1.id, n2.id, RelType.CALLS)
+        coupled_rel = _make_rel(n1.id, n2.id, RelType.COUPLED_WITH)
+        backend.add_relationships([calls_rel, coupled_rel])
+
+        backend.remove_relationships_by_type(RelType.COUPLED_WITH)
+
+        graph = backend.load_graph()
+        rel_types = [r.type for r in graph.iter_relationships()]
+        assert RelType.CALLS in rel_types
+        assert RelType.COUPLED_WITH not in rel_types

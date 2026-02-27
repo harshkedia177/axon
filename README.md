@@ -61,7 +61,7 @@ pip install axoniq            # 1. Install
 cd your-project && axon analyze .  # 2. Index (one command, ~5s for most repos)
 ```
 
-Then add to `.mcp.json` or `.claude/settings.json`:
+Then add to `.mcp.json` in your project root:
 
 ```json
 {
@@ -215,7 +215,7 @@ Axon exposes its full intelligence as an MCP server. Set it up once, and your AI
 
 ### Setup
 
-**Claude Code** — add to `.mcp.json` or `.claude/settings.json`:
+**Claude Code** — add to `.mcp.json` in your project root (or run `claude mcp add axon -- axon serve --watch`):
 
 ```json
 {

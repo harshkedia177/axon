@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 from axon.core.graph.graph import KnowledgeGraph
-from axon.core.graph.model import GraphNode, GraphRelationship
+from axon.core.graph.model import GraphNode, GraphRelationship, RelType
 
 @dataclass
 class SearchResult:
@@ -142,6 +142,30 @@ class StorageBackend(Protocol):
         """Return a mapping of ``{file_path: content_hash}`` for all indexed files."""
         ...
 
+    def load_graph(self) -> KnowledgeGraph:
+        """Reconstruct a full :class:`KnowledgeGraph` from the backing store."""
+        ...
+
     def bulk_load(self, graph: KnowledgeGraph) -> None:
         """Replace the entire store contents with *graph*."""
+        ...
+
+    def delete_synthetic_nodes(self) -> None:
+        """Remove all COMMUNITY and PROCESS nodes and their relationships."""
+        ...
+
+    def upsert_embeddings(self, embeddings: list[NodeEmbedding]) -> None:
+        """Insert or update embeddings without wiping existing ones."""
+        ...
+
+    def update_dead_flags(self, dead_ids: set[str], alive_ids: set[str]) -> None:
+        """Set is_dead=True on *dead_ids* and is_dead=False on *alive_ids*."""
+        ...
+
+    def remove_relationships_by_type(self, rel_type: RelType) -> None:
+        """Delete all relationships of a specific type."""
+        ...
+
+    def rebuild_fts_indexes(self) -> None:
+        """Drop and recreate all FTS indexes after bulk data changes."""
         ...

@@ -85,3 +85,48 @@ def embed_graph(
         )
 
     return results
+
+
+def embed_nodes(
+    graph: KnowledgeGraph,
+    node_ids: set[str],
+    model_name: str = "BAAI/bge-small-en-v1.5",
+    batch_size: int = 64,
+) -> list[NodeEmbedding]:
+    """Generate embeddings for a specific set of node IDs.
+
+    Only embeds nodes whose label is in EMBEDDABLE_LABELS and whose ID
+    is in *node_ids*.  Uses the same text generation as embed_graph.
+
+    Args:
+        graph: The knowledge graph containing the nodes.
+        node_ids: Set of node IDs to embed.
+        model_name: The fastembed model identifier.
+        batch_size: Number of texts to encode per batch.
+
+    Returns:
+        A list of :class:`NodeEmbedding` instances for the requested nodes.
+    """
+    if not node_ids:
+        return []
+
+    nodes = [graph.get_node(nid) for nid in node_ids]
+    nodes = [n for n in nodes if n is not None and n.label in EMBEDDABLE_LABELS]
+
+    if not nodes:
+        return []
+
+    class_method_idx = build_class_method_index(graph)
+    model = _get_model(model_name)
+
+    texts = [generate_text(n, graph, class_method_idx) for n in nodes]
+    embeddings: list[NodeEmbedding] = []
+    for node, vector in zip(nodes, model.embed(texts, batch_size=batch_size)):
+        embeddings.append(
+            NodeEmbedding(
+                node_id=node.id,
+                embedding=vector.tolist(),
+            )
+        )
+
+    return embeddings

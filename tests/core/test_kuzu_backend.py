@@ -327,3 +327,59 @@ class TestMultipleLabels:
         assert backend.get_node(cls.id) is not None
         assert backend.get_node(fn.id).label == NodeLabel.FUNCTION
         assert backend.get_node(cls.id).label == NodeLabel.CLASS
+
+
+# ---------------------------------------------------------------------------
+# load_graph
+# ---------------------------------------------------------------------------
+
+
+class TestLoadGraph:
+    def test_round_trips_nodes_and_relationships(self, backend: KuzuBackend) -> None:
+        """Store 3 nodes and 2 relationships, load_graph, verify counts and existence."""
+        n1 = _make_node(name="alpha", file_path="src/a.py")
+        n2 = _make_node(name="beta", file_path="src/a.py")
+        n3 = _make_node(label=NodeLabel.CLASS, name="Gamma", file_path="src/a.py")
+        backend.add_nodes([n1, n2, n3])
+
+        r1 = _make_rel(n1.id, n2.id, RelType.CALLS)
+        r2 = _make_rel(n1.id, n3.id, RelType.CALLS)
+        backend.add_relationships([r1, r2])
+
+        graph = backend.load_graph()
+
+        assert graph.node_count == 3
+        assert graph.relationship_count == 2
+        assert graph.get_node(n1.id) is not None
+        assert graph.get_node(n2.id) is not None
+        assert graph.get_node(n3.id) is not None
+
+    def test_preserves_node_properties(self, backend: KuzuBackend) -> None:
+        """Store a node with boolean flags and signature, verify they survive round-trip."""
+        node = GraphNode(
+            id=generate_id(NodeLabel.FUNCTION, "src/d.py", "special"),
+            label=NodeLabel.FUNCTION,
+            name="special",
+            file_path="src/d.py",
+            signature="def special() -> bool",
+            is_dead=True,
+            is_entry_point=True,
+        )
+        backend.add_nodes([node])
+
+        graph = backend.load_graph()
+        loaded = graph.get_node(node.id)
+
+        assert loaded is not None
+        assert loaded.name == "special"
+        assert loaded.signature == "def special() -> bool"
+        assert loaded.is_dead is True
+        assert loaded.is_entry_point is True
+        assert loaded.is_exported is False
+
+    def test_empty_storage_returns_empty_graph(self, backend: KuzuBackend) -> None:
+        """Loading from an empty database returns an empty KnowledgeGraph."""
+        graph = backend.load_graph()
+
+        assert graph.node_count == 0
+        assert graph.relationship_count == 0

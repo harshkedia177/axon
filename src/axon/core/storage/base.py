@@ -142,6 +142,10 @@ class StorageBackend(Protocol):
         """Return a mapping of ``{file_path: content_hash}`` for all indexed files."""
         ...
 
+    def load_graph(self) -> KnowledgeGraph:
+        """Reconstruct a full :class:`KnowledgeGraph` from the backing store."""
+        ...
+
     def bulk_load(self, graph: KnowledgeGraph) -> None:
         """Replace the entire store contents with *graph*."""
         ...

@@ -19,7 +19,7 @@ from typing import Any
 import kuzu
 
 from axon.core.graph.graph import KnowledgeGraph
-from axon.core.graph.model import GraphNode, GraphRelationship, NodeLabel
+from axon.core.graph.model import GraphNode, GraphRelationship, NodeLabel, RelType
 from axon.core.storage.base import NodeEmbedding, SearchResult
 
 logger = logging.getLogger(__name__)
@@ -31,6 +31,8 @@ _LABEL_TO_TABLE: dict[str, str] = {
 }
 
 _LABEL_MAP: dict[str, NodeLabel] = {label.value: label for label in NodeLabel}
+
+_REL_TYPE_MAP: dict[str, RelType] = {rt.value: rt for rt in RelType}
 
 _SEARCHABLE_TABLES: list[str] = [
     t for t in _NODE_TABLE_NAMES
@@ -585,6 +587,84 @@ class KuzuBackend:
         except Exception:
             logger.debug("get_indexed_files failed", exc_info=True)
         return mapping
+
+    def load_graph(self) -> KnowledgeGraph:
+        """Reconstruct a full :class:`KnowledgeGraph` from the database.
+
+        Queries every node table and the ``CodeRelation`` relationship group,
+        converting rows back into :class:`GraphNode` and
+        :class:`GraphRelationship` objects.
+
+        Returns:
+            A fully populated :class:`KnowledgeGraph` instance.
+        """
+        assert self._conn is not None
+        graph = KnowledgeGraph()
+
+        # -- Load nodes from every table --
+        for table in _NODE_TABLE_NAMES:
+            try:
+                result = self._conn.execute(f"MATCH (n:{table}) RETURN n.*")
+                while result.has_next():
+                    row = result.get_next()
+                    node = self._row_to_node(row)
+                    if node is not None:
+                        graph.add_node(node)
+            except Exception:
+                logger.debug("load_graph: failed to read table %s", table, exc_info=True)
+
+        # -- Load relationships --
+        try:
+            result = self._conn.execute(
+                "MATCH (a)-[r:CodeRelation]->(b) "
+                "RETURN a.id, b.id, r.rel_type, r.confidence, r.role, "
+                "r.step_number, r.strength, r.co_changes, r.symbols"
+            )
+            while result.has_next():
+                row = result.get_next()
+                src_id: str = row[0] or ""
+                tgt_id: str = row[1] or ""
+                rel_type_str: str = row[2] or ""
+
+                rel_type = _REL_TYPE_MAP.get(rel_type_str)
+                if rel_type is None:
+                    continue
+
+                rel_id = f"{rel_type_str}:{src_id}->{tgt_id}"
+
+                props: dict[str, Any] = {}
+                # col 3: confidence
+                if row[3] is not None:
+                    props["confidence"] = float(row[3])
+                # col 4: role
+                if row[4] is not None and row[4] != "":
+                    props["role"] = str(row[4])
+                # col 5: step_number
+                if row[5] is not None and row[5] != 0:
+                    props["step_number"] = int(row[5])
+                # col 6: strength
+                if row[6] is not None and row[6] != 0.0:
+                    props["strength"] = float(row[6])
+                # col 7: co_changes
+                if row[7] is not None and row[7] != 0:
+                    props["co_changes"] = int(row[7])
+                # col 8: symbols
+                if row[8] is not None and row[8] != "":
+                    props["symbols"] = str(row[8])
+
+                graph.add_relationship(
+                    GraphRelationship(
+                        id=rel_id,
+                        type=rel_type,
+                        source=src_id,
+                        target=tgt_id,
+                        properties=props,
+                    )
+                )
+        except Exception:
+            logger.debug("load_graph: failed to read relationships", exc_info=True)
+
+        return graph
 
     def bulk_load(self, graph: KnowledgeGraph) -> None:
         """Replace the entire store with the contents of *graph*.

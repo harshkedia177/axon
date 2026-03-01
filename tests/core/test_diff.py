@@ -2,14 +2,26 @@
 
 from __future__ import annotations
 
-from axon.core.diff import StructuralDiff, diff_graphs, format_diff
+import subprocess
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from axon.core.diff import (
+    StructuralDiff,
+    _build_graph_for_ref,
+    _validate_ref,
+    diff_branches,
+    diff_graphs,
+    format_diff,
+)
 from axon.core.graph.model import (
     GraphNode,
     GraphRelationship,
     NodeLabel,
     RelType,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -214,6 +226,80 @@ class TestDiffGraphsMixedChanges:
 
 
 # ---------------------------------------------------------------------------
+# Tests: git ref validation and worktree safety
+# ---------------------------------------------------------------------------
+
+
+class TestValidateRef:
+    """Tests for git ref validation before worktree operations."""
+
+    @pytest.mark.parametrize("ref", ["main", "feature/x", "HEAD~1"])
+    def test_accepts_valid_refs(self, ref: str) -> None:
+        completed = subprocess.CompletedProcess(args=["git"], returncode=0, stdout="", stderr="")
+        with patch("axon.core.diff.subprocess.run", return_value=completed) as mock_run:
+            _validate_ref(Path("/repo"), ref)
+
+        assert mock_run.call_count == 1
+        cmd = mock_run.call_args.args[0]
+        assert cmd[:5] == ["git", "rev-parse", "--verify", "--quiet", "--end-of-options"]
+        assert cmd[-1] == f"{ref}^{{commit}}"
+
+    def test_rejects_dash_prefixed_refs(self) -> None:
+        with patch("axon.core.diff.subprocess.run") as mock_run:
+            with pytest.raises(ValueError, match="cannot start with"):
+                _validate_ref(Path("/repo"), "--detach")
+
+        mock_run.assert_not_called()
+
+    def test_rejects_command_substitution_like_refs_as_invalid(self) -> None:
+        completed = subprocess.CompletedProcess(
+            args=["git"],
+            returncode=1,
+            stdout="",
+            stderr="fatal",
+        )
+        with patch("axon.core.diff.subprocess.run", return_value=completed) as mock_run:
+            with pytest.raises(ValueError, match="Invalid git ref"):
+                _validate_ref(Path("/repo"), "$(id)")
+
+        cmd = mock_run.call_args.args[0]
+        assert cmd[-1] == "$(id)^{commit}"
+
+
+class TestDiffBranchesValidation:
+    """Validation should fail before any graph build work starts."""
+
+    def test_rejects_invalid_base_ref_before_building_graph(self, tmp_path: Path) -> None:
+        with patch("axon.core.diff.subprocess.run") as mock_run:
+            with patch("axon.core.ingestion.pipeline.build_graph") as mock_build:
+                with pytest.raises(ValueError, match="cannot start with"):
+                    diff_branches(tmp_path, "--detach")
+
+        mock_run.assert_not_called()
+        mock_build.assert_not_called()
+
+
+class TestBuildGraphForRef:
+    """Worktree command should separate options from refs."""
+
+    def test_worktree_add_uses_end_of_options_separator(self, tmp_path: Path) -> None:
+        completed = subprocess.CompletedProcess(args=["git"], returncode=0, stdout="", stderr="")
+        fake_graph = MagicMock(name="graph")
+
+        with patch("axon.core.diff.subprocess.run", return_value=completed) as mock_run:
+            with patch("axon.core.ingestion.pipeline.build_graph", return_value=fake_graph):
+                result = _build_graph_for_ref(tmp_path, "feature/x")
+
+        assert result is fake_graph
+        assert len(mock_run.call_args_list) == 2
+        add_cmd = mock_run.call_args_list[0].args[0]
+        assert add_cmd[:3] == ["git", "worktree", "add"]
+        assert add_cmd[-2:] == ["--", "feature/x"]
+        remove_cmd = mock_run.call_args_list[1].args[0]
+        assert remove_cmd[:4] == ["git", "worktree", "remove", "--force"]
+
+
+# ---------------------------------------------------------------------------
 # Tests: format_diff
 # ---------------------------------------------------------------------------
 
@@ -254,9 +340,7 @@ class TestFormatDiffModifiedNodes:
 
     def test_modified(self) -> None:
         diff = StructuralDiff(
-            modified_nodes=[
-                (_node("n1", name="changed_func"), _node("n1", name="changed_func"))
-            ]
+            modified_nodes=[(_node("n1", name="changed_func"), _node("n1", name="changed_func"))]
         )
         result = format_diff(diff)
 

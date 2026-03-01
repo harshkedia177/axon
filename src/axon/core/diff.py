@@ -13,10 +13,15 @@ import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from axon.core.graph.model import GraphNode, GraphRelationship
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from axon.core.graph.graph import KnowledgeGraph
+
 
 @dataclass
 class StructuralDiff:
@@ -28,8 +33,10 @@ class StructuralDiff:
     added_relationships: list[GraphRelationship] = field(default_factory=list)
     removed_relationships: list[GraphRelationship] = field(default_factory=list)
 
+
 # Fields checked to determine if a node was "modified".
 _NODE_COMPARE_FIELDS = ("content", "signature", "start_line", "end_line")
+
 
 def diff_graphs(
     base_nodes: dict[str, GraphNode],
@@ -80,12 +87,37 @@ def diff_graphs(
 
     return result
 
+
 def _node_changed(base: GraphNode, current: GraphNode) -> bool:
     """Return True if the two nodes differ on any comparison field."""
     for attr in _NODE_COMPARE_FIELDS:
         if getattr(base, attr) != getattr(current, attr):
             return True
     return False
+
+
+def _validate_ref(repo_path: Path, ref: str) -> None:
+    """Validate a git ref before passing it to git commands."""
+    if ref.startswith("-"):
+        raise ValueError(f"Invalid git ref {ref!r}: refs cannot start with '-'.")
+
+    result = subprocess.run(
+        [
+            "git",
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            "--end-of-options",
+            f"{ref}^{{commit}}",
+        ],
+        cwd=repo_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise ValueError(f"Invalid git ref: {ref!r}")
+
 
 def diff_branches(
     repo_path: Path,
@@ -128,6 +160,10 @@ def diff_branches(
     if not base_ref:
         raise ValueError(f"Invalid branch range: {branch_range!r}")
 
+    _validate_ref(repo_path, base_ref)
+    if current_ref:
+        _validate_ref(repo_path, current_ref)
+
     # Build both graphs (in parallel when both need worktrees).
     if current_ref:
         with ThreadPoolExecutor(max_workers=2) as executor:
@@ -146,9 +182,9 @@ def diff_branches(
 
     return diff_graphs(base_nodes, current_nodes, base_rels, current_rels)
 
-def _build_graph_for_ref(repo_path: Path, ref: str) -> "KnowledgeGraph":
+
+def _build_graph_for_ref(repo_path: Path, ref: str) -> KnowledgeGraph:
     """Build an in-memory graph for a git ref using a temporary worktree."""
-    from axon.core.graph.graph import KnowledgeGraph
     from axon.core.ingestion.pipeline import build_graph
 
     with tempfile.TemporaryDirectory(prefix="axon_diff_") as tmp_dir:
@@ -156,7 +192,7 @@ def _build_graph_for_ref(repo_path: Path, ref: str) -> "KnowledgeGraph":
 
         try:
             subprocess.run(
-                ["git", "worktree", "add", str(worktree_path), ref],
+                ["git", "worktree", "add", str(worktree_path), "--", ref],
                 cwd=repo_path,
                 capture_output=True,
                 text=True,
@@ -182,6 +218,7 @@ def _build_graph_for_ref(repo_path: Path, ref: str) -> "KnowledgeGraph":
                 logger.warning("Failed to remove worktree at %s", worktree_path)
 
     return graph
+
 
 def format_diff(diff: StructuralDiff) -> str:
     """Format a StructuralDiff as human-readable output.

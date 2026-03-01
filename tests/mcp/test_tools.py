@@ -386,6 +386,38 @@ class TestHandleCypher:
         assert "failed" in result.lower()
         assert "Syntax error" in result
 
+    def test_allows_read_only_call_query(self, mock_storage):
+        """Allows read-only CALL procedures such as QUERY_FTS_INDEX."""
+        query = "CALL QUERY_FTS_INDEX('Function', 'function_fts', 'validate') RETURN node.id, score"
+        mock_storage.execute_raw.return_value = [["function:src/auth.py:validate", 1.0]]
+
+        result = handle_cypher(mock_storage, query)
+
+        mock_storage.execute_raw.assert_called_once_with(query)
+        assert "Results (1 rows)" in result
+        assert "validate" in result
+
+    def test_rejects_call_install(self, mock_storage):
+        """Blocks unsafe CALL INSTALL procedure usage."""
+        result = handle_cypher(mock_storage, "CALL INSTALL EXTENSION 'httpfs';")
+
+        assert "Query rejected" in result
+        mock_storage.execute_raw.assert_not_called()
+
+    def test_rejects_call_load(self, mock_storage):
+        """Blocks unsafe CALL LOAD procedure usage."""
+        result = handle_cypher(mock_storage, "CALL LOAD EXTENSION 'json';")
+
+        assert "Query rejected" in result
+        mock_storage.execute_raw.assert_not_called()
+
+    def test_rejects_write_keyword_queries(self, mock_storage):
+        """Write operations remain blocked."""
+        result = handle_cypher(mock_storage, "MATCH (n) DETACH DELETE n RETURN n")
+
+        assert "Query rejected" in result
+        mock_storage.execute_raw.assert_not_called()
+
 
 # ---------------------------------------------------------------------------
 # Resource handlers

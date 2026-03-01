@@ -433,15 +433,15 @@ def handle_detect_changes(storage: StorageBackend, diff: str) -> str:
     return "\n".join(lines)
 
 _WRITE_KEYWORDS = re.compile(
-    r"\b(DELETE|DROP|CREATE|SET|REMOVE|MERGE|DETACH|INSTALL|LOAD|COPY|CALL)\b",
+    r"\b(DELETE|DROP|CREATE|SET|REMOVE|MERGE|DETACH|INSTALL|LOAD|COPY)\b",
     re.IGNORECASE,
 )
 
 def handle_cypher(storage: StorageBackend, query: str) -> str:
     """Execute a raw Cypher query and return formatted results.
 
-    Only read-only queries are allowed.  Queries containing write keywords
-    (DELETE, DROP, CREATE, SET, etc.) are rejected.
+    Only read-only queries are allowed. Queries containing write/admin
+    keywords (DELETE, DROP, CREATE, SET, INSTALL, LOAD, etc.) are rejected.
 
     Args:
         storage: The storage backend.
@@ -452,8 +452,9 @@ def handle_cypher(storage: StorageBackend, query: str) -> str:
     """
     if _WRITE_KEYWORDS.search(query):
         return (
-            "Query rejected: only read-only queries (MATCH/RETURN) are allowed. "
-            "Write operations (DELETE, DROP, CREATE, SET, MERGE) are not permitted."
+            "Query rejected: only read-only queries are allowed. "
+            "Write/admin operations (DELETE, DROP, CREATE, SET, MERGE, INSTALL, LOAD) "
+            "are not permitted."
         )
 
     try:

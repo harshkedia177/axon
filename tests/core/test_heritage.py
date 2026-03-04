@@ -110,9 +110,7 @@ class TestBuildSymbolIndex:
                 assert node is not None
                 assert node.name == name
 
-    def test_index_excludes_non_heritage_labels(
-        self, graph: KnowledgeGraph
-    ) -> None:
+    def test_index_excludes_non_heritage_labels(self, graph: KnowledgeGraph) -> None:
         # Add a function node -- it should NOT appear in the index.
         graph.add_node(
             GraphNode(
@@ -150,9 +148,7 @@ class TestProcessHeritageExtends:
         assert rel.source == generate_id(NodeLabel.CLASS, "src/models.py", "Dog")
         assert rel.target == generate_id(NodeLabel.CLASS, "src/models.py", "Animal")
 
-    def test_extends_relationship_id_format(
-        self, graph: KnowledgeGraph
-    ) -> None:
+    def test_extends_relationship_id_format(self, graph: KnowledgeGraph) -> None:
         parse_data = [
             _make_parse_data(
                 "src/models.py",
@@ -189,13 +185,9 @@ class TestProcessHeritageImplements:
 
         rel = impl_rels[0]
         assert rel.source == generate_id(NodeLabel.CLASS, "src/models.ts", "User")
-        assert rel.target == generate_id(
-            NodeLabel.INTERFACE, "src/types.ts", "Serializable"
-        )
+        assert rel.target == generate_id(NodeLabel.INTERFACE, "src/types.ts", "Serializable")
 
-    def test_implements_relationship_type(
-        self, graph: KnowledgeGraph
-    ) -> None:
+    def test_implements_relationship_type(self, graph: KnowledgeGraph) -> None:
         parse_data = [
             _make_parse_data(
                 "src/models.ts",
@@ -216,9 +208,7 @@ class TestProcessHeritageImplements:
 class TestProcessHeritageUnresolvedParent:
     """Heritage referencing an unknown parent is silently skipped."""
 
-    def test_process_heritage_unresolved_parent(
-        self, graph: KnowledgeGraph
-    ) -> None:
+    def test_process_heritage_unresolved_parent(self, graph: KnowledgeGraph) -> None:
         parse_data = [
             _make_parse_data(
                 "src/models.py",
@@ -231,9 +221,7 @@ class TestProcessHeritageUnresolvedParent:
         extends_rels = graph.get_relationships_by_type(RelType.EXTENDS)
         assert len(extends_rels) == 0
 
-    def test_unresolved_child_also_skipped(
-        self, graph: KnowledgeGraph
-    ) -> None:
+    def test_unresolved_child_also_skipped(self, graph: KnowledgeGraph) -> None:
         parse_data = [
             _make_parse_data(
                 "src/models.py",
@@ -288,9 +276,7 @@ class TestProcessHeritageMultiple:
         total = len(extends_rels) + len(impl_rels)
         assert total == 3
 
-    def test_multiple_heritage_sources_are_correct(
-        self, graph: KnowledgeGraph
-    ) -> None:
+    def test_multiple_heritage_sources_are_correct(self, graph: KnowledgeGraph) -> None:
         graph.add_node(
             GraphNode(
                 id=generate_id(NodeLabel.INTERFACE, "src/types.ts", "Printable"),

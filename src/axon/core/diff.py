@@ -14,9 +14,11 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from axon.core.graph.graph import KnowledgeGraph
 from axon.core.graph.model import GraphNode, GraphRelationship
 
 logger = logging.getLogger(__name__)
+
 
 @dataclass
 class StructuralDiff:
@@ -28,8 +30,10 @@ class StructuralDiff:
     added_relationships: list[GraphRelationship] = field(default_factory=list)
     removed_relationships: list[GraphRelationship] = field(default_factory=list)
 
+
 # Fields checked to determine if a node was "modified".
 _NODE_COMPARE_FIELDS = ("content", "signature", "start_line", "end_line")
+
 
 def diff_graphs(
     base_nodes: dict[str, GraphNode],
@@ -80,12 +84,14 @@ def diff_graphs(
 
     return result
 
+
 def _node_changed(base: GraphNode, current: GraphNode) -> bool:
     """Return True if the two nodes differ on any comparison field."""
     for attr in _NODE_COMPARE_FIELDS:
         if getattr(base, attr) != getattr(current, attr):
             return True
     return False
+
 
 def diff_branches(
     repo_path: Path,
@@ -146,7 +152,8 @@ def diff_branches(
 
     return diff_graphs(base_nodes, current_nodes, base_rels, current_rels)
 
-def _build_graph_for_ref(repo_path: Path, ref: str) -> "KnowledgeGraph":
+
+def _build_graph_for_ref(repo_path: Path, ref: str) -> KnowledgeGraph:
     """Build an in-memory graph for a git ref using a temporary worktree."""
     from axon.core.ingestion.pipeline import build_graph
 
@@ -181,6 +188,7 @@ def _build_graph_for_ref(repo_path: Path, ref: str) -> "KnowledgeGraph":
                 logger.warning("Failed to remove worktree at %s", worktree_path)
 
     return graph
+
 
 def format_diff(diff: StructuralDiff) -> str:
     """Format a StructuralDiff as human-readable output.

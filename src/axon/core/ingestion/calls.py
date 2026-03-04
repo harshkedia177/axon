@@ -47,38 +47,154 @@ _KIND_TO_LABEL: dict[str, NodeLabel] = {
 # stdlib utilities, framework hooks, and common JS/TS globals whose definitions
 # do not exist in the user's codebase.  Filtering them before resolution
 # prevents low-confidence global-fuzzy matches against short, common names.
-_CALL_BLOCKLIST: frozenset[str] = frozenset({
-    # Python builtins
-    "print", "len", "range", "map", "filter", "sorted", "list", "dict",
-    "set", "str", "int", "float", "bool", "type", "super", "isinstance",
-    "issubclass", "hasattr", "getattr", "setattr", "open", "iter", "next",
-    "zip", "enumerate", "any", "all", "min", "max", "sum", "abs", "round",
-    "repr", "id", "hash", "dir", "vars", "input", "format", "tuple",
-    "frozenset", "bytes", "bytearray", "memoryview", "object", "property",
-    "classmethod", "staticmethod", "delattr", "callable", "compile", "eval",
-    "exec", "globals", "locals", "breakpoint", "exit", "quit",
-    # Python stdlib — common method names that collide with user-defined symbols
-    "append", "extend", "update", "pop", "get", "items", "keys", "values",
-    "split", "join", "strip", "replace", "startswith", "endswith", "lower",
-    "upper", "encode", "decode", "read", "write", "close",
-    # JS/TS built-in globals
-    "console", "setTimeout", "setInterval", "clearTimeout", "clearInterval",
-    "JSON", "Array", "Object", "Promise", "Math", "Date", "Error", "Symbol",
-    "parseInt", "parseFloat", "isNaN", "isFinite", "encodeURIComponent",
-    "decodeURIComponent", "fetch", "require", "exports", "module",
-    "document", "window", "process", "Buffer", "URL",
-    # JS/TS dotted method names extracted as bare call names
-    "log", "error", "warn", "info", "debug",
-    "parse", "stringify",
-    "assign", "freeze",
-    "isArray", "from", "of",
-    "resolve", "reject", "race",
-    "floor", "ceil", "random",
-    # React hooks
-    "useState", "useEffect", "useRef", "useCallback", "useMemo",
-    "useContext", "useReducer", "useLayoutEffect", "useImperativeHandle",
-    "useDebugValue", "useId", "useTransition", "useDeferredValue",
-})
+_CALL_BLOCKLIST: frozenset[str] = frozenset(
+    {
+        # Python builtins
+        "print",
+        "len",
+        "range",
+        "map",
+        "filter",
+        "sorted",
+        "list",
+        "dict",
+        "set",
+        "str",
+        "int",
+        "float",
+        "bool",
+        "type",
+        "super",
+        "isinstance",
+        "issubclass",
+        "hasattr",
+        "getattr",
+        "setattr",
+        "open",
+        "iter",
+        "next",
+        "zip",
+        "enumerate",
+        "any",
+        "all",
+        "min",
+        "max",
+        "sum",
+        "abs",
+        "round",
+        "repr",
+        "id",
+        "hash",
+        "dir",
+        "vars",
+        "input",
+        "format",
+        "tuple",
+        "frozenset",
+        "bytes",
+        "bytearray",
+        "memoryview",
+        "object",
+        "property",
+        "classmethod",
+        "staticmethod",
+        "delattr",
+        "callable",
+        "compile",
+        "eval",
+        "exec",
+        "globals",
+        "locals",
+        "breakpoint",
+        "exit",
+        "quit",
+        # Python stdlib — common method names that collide with user-defined symbols
+        "append",
+        "extend",
+        "update",
+        "pop",
+        "get",
+        "items",
+        "keys",
+        "values",
+        "split",
+        "join",
+        "strip",
+        "replace",
+        "startswith",
+        "endswith",
+        "lower",
+        "upper",
+        "encode",
+        "decode",
+        "read",
+        "write",
+        "close",
+        # JS/TS built-in globals
+        "console",
+        "setTimeout",
+        "setInterval",
+        "clearTimeout",
+        "clearInterval",
+        "JSON",
+        "Array",
+        "Object",
+        "Promise",
+        "Math",
+        "Date",
+        "Error",
+        "Symbol",
+        "parseInt",
+        "parseFloat",
+        "isNaN",
+        "isFinite",
+        "encodeURIComponent",
+        "decodeURIComponent",
+        "fetch",
+        "require",
+        "exports",
+        "module",
+        "document",
+        "window",
+        "process",
+        "Buffer",
+        "URL",
+        # JS/TS dotted method names extracted as bare call names
+        "log",
+        "error",
+        "warn",
+        "info",
+        "debug",
+        "parse",
+        "stringify",
+        "assign",
+        "freeze",
+        "isArray",
+        "from",
+        "of",
+        "resolve",
+        "reject",
+        "race",
+        "floor",
+        "ceil",
+        "random",
+        # React hooks
+        "useState",
+        "useEffect",
+        "useRef",
+        "useCallback",
+        "useMemo",
+        "useContext",
+        "useReducer",
+        "useLayoutEffect",
+        "useImperativeHandle",
+        "useDebugValue",
+        "useId",
+        "useTransition",
+        "useDeferredValue",
+    }
+)
+
 
 def resolve_call(
     call: CallInfo,
@@ -141,6 +257,7 @@ def resolve_call(
     # 3. Global fuzzy match -- prefer shortest file path.
     return _pick_closest(candidate_ids, graph), 0.5
 
+
 def _resolve_self_method(
     method_name: str,
     file_path: str,
@@ -154,13 +271,10 @@ def _resolve_self_method(
     """
     for nid in call_index.get(method_name, []):
         node = graph.get_node(nid)
-        if (
-            node is not None
-            and node.label == NodeLabel.METHOD
-            and node.file_path == file_path
-        ):
+        if node is not None and node.label == NodeLabel.METHOD and node.file_path == file_path:
             return nid
     return None
+
 
 def _resolve_via_imports(
     name: str,
@@ -202,6 +316,7 @@ def _resolve_via_imports(
 
     return None
 
+
 def _pick_closest(candidate_ids: list[str], graph: KnowledgeGraph) -> str | None:
     """Pick the candidate with the shortest file path (proximity heuristic).
 
@@ -217,6 +332,7 @@ def _pick_closest(candidate_ids: list[str], graph: KnowledgeGraph) -> str | None
             best_id = nid
 
     return best_id
+
 
 def _add_calls_edge(
     source_id: str,
@@ -239,6 +355,7 @@ def _add_calls_edge(
             )
         )
 
+
 def _resolve_receiver_method(
     receiver: str,
     method_name: str,
@@ -259,11 +376,7 @@ def _resolve_receiver_method(
 
     for nid in call_index.get(method_name, []):
         node = graph.get_node(nid)
-        if (
-            node is not None
-            and node.label == NodeLabel.METHOD
-            and node.class_name == receiver
-        ):
+        if node is not None and node.label == NodeLabel.METHOD and node.class_name == receiver:
             if node.file_path == file_path:
                 same_file_match = nid
                 break
@@ -307,9 +420,7 @@ def process_calls(
             if call.name in _CALL_BLOCKLIST and call.receiver not in ("self", "this"):
                 continue
 
-            source_id = find_containing_symbol(
-                call.line, fpd.file_path, file_sym_index
-            )
+            source_id = find_containing_symbol(call.line, fpd.file_path, file_sym_index)
             if source_id is None:
                 logger.debug(
                     "No containing symbol for call %s at line %d in %s",
@@ -319,9 +430,7 @@ def process_calls(
                 )
                 continue
 
-            target_id, confidence = resolve_call(
-                call, fpd.file_path, call_index, graph
-            )
+            target_id, confidence = resolve_call(call, fpd.file_path, call_index, graph)
             if target_id is not None:
                 _add_calls_edge(source_id, target_id, confidence, graph, seen)
 
@@ -331,9 +440,7 @@ def process_calls(
                 if arg_name in _CALL_BLOCKLIST:
                     continue
                 arg_call = CallInfo(name=arg_name, line=call.line)
-                arg_id, arg_conf = resolve_call(
-                    arg_call, fpd.file_path, call_index, graph
-                )
+                arg_id, arg_conf = resolve_call(arg_call, fpd.file_path, call_index, graph)
                 if arg_id is not None:
                     _add_calls_edge(source_id, arg_id, arg_conf * 0.8, graph, seen)
 
@@ -341,15 +448,18 @@ def process_calls(
             receiver = call.receiver
             if receiver and receiver not in ("self", "this"):
                 receiver_call = CallInfo(name=receiver, line=call.line)
-                recv_id, recv_conf = resolve_call(
-                    receiver_call, fpd.file_path, call_index, graph
-                )
+                recv_id, recv_conf = resolve_call(receiver_call, fpd.file_path, call_index, graph)
                 if recv_id is not None:
                     _add_calls_edge(source_id, recv_id, recv_conf, graph, seen)
 
                 _resolve_receiver_method(
-                    receiver, call.name, source_id, fpd.file_path,
-                    call_index, graph, seen,
+                    receiver,
+                    call.name,
+                    source_id,
+                    fpd.file_path,
+                    call_index,
+                    graph,
+                    seen,
                 )
 
         # Decorators are implicit calls — @cost_decorator on a function is
@@ -374,15 +484,11 @@ def process_calls(
                 # but also try the full dotted name.
                 base_name = dec_name.rsplit(".", 1)[-1] if "." in dec_name else dec_name
                 call_obj = CallInfo(name=base_name, line=symbol.start_line)
-                target_id, confidence = resolve_call(
-                    call_obj, fpd.file_path, call_index, graph
-                )
+                target_id, confidence = resolve_call(call_obj, fpd.file_path, call_index, graph)
                 if target_id is None and "." in dec_name:
                     # Try full dotted name as well.
                     call_obj = CallInfo(name=dec_name, line=symbol.start_line)
-                    target_id, confidence = resolve_call(
-                        call_obj, fpd.file_path, call_index, graph
-                    )
+                    target_id, confidence = resolve_call(call_obj, fpd.file_path, call_index, graph)
                 if target_id is None:
                     continue
 

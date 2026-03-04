@@ -29,6 +29,7 @@ def _get_model(model_name: str) -> TextEmbedding:
 
     return TextEmbedding(model_name=model_name)
 
+
 # Labels worth embedding — skip Folder, Community, Process (structural only).
 EMBEDDABLE_LABELS: frozenset[NodeLabel] = frozenset(
     {
@@ -41,6 +42,7 @@ EMBEDDABLE_LABELS: frozenset[NodeLabel] = frozenset(
         NodeLabel.ENUM,
     }
 )
+
 
 def embed_graph(
     graph: KnowledgeGraph,

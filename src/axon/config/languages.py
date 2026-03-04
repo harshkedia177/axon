@@ -14,6 +14,7 @@ SUPPORTED_EXTENSIONS: dict[str, str] = {
     ".cjs": "javascript",
 }
 
+
 def get_language(file_path: str | Path) -> str | None:
     """Return the language name for *file_path* based on its extension.
 
@@ -21,6 +22,7 @@ def get_language(file_path: str | Path) -> str | None:
     """
     suffix = Path(file_path).suffix
     return SUPPORTED_EXTENSIONS.get(suffix)
+
 
 def is_supported(file_path: str | Path) -> bool:
     """Return ``True`` if *file_path* has a supported extension."""

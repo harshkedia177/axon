@@ -46,6 +46,7 @@ _BUILTIN_TYPES: frozenset[str] = frozenset(
     }
 )
 
+
 class TypeScriptParser(LanguageParser):
     """Parse TypeScript, TSX, or JavaScript files via tree-sitter.
 
@@ -56,8 +57,7 @@ class TypeScriptParser(LanguageParser):
     def __init__(self, dialect: str = "typescript") -> None:
         if dialect not in _DIALECT_MAP:
             raise ValueError(
-                f"Unknown dialect {dialect!r}. "
-                f"Expected one of: {', '.join(sorted(_DIALECT_MAP))}"
+                f"Unknown dialect {dialect!r}. Expected one of: {', '.join(sorted(_DIALECT_MAP))}"
             )
         self.dialect = dialect
         self._language = _DIALECT_MAP[dialect]
@@ -116,9 +116,7 @@ class TypeScriptParser(LanguageParser):
         for child in node.children:
             self._walk(child, source, result, visited)
 
-    def _extract_export(
-        self, node: Node, source: str, result: ParseResult
-    ) -> None:
+    def _extract_export(self, node: Node, source: str, result: ParseResult) -> None:
         """Handle ``export`` statements — mark exported symbol names.
 
         Handles ``export function foo()``, ``export class Bar``,
@@ -148,9 +146,7 @@ class TypeScriptParser(LanguageParser):
                         if name_node is not None:
                             result.exports.append(name_node.text.decode())
 
-    def _maybe_extract_module_exports(
-        self, node: Node, source: str, result: ParseResult
-    ) -> None:
+    def _maybe_extract_module_exports(self, node: Node, source: str, result: ParseResult) -> None:
         """Handle ``module.exports = X``, ``module.exports = { A, B }``,
         and ``exports.name = fn`` / ``module.exports.name = fn``."""
         for child in node.children:
@@ -209,9 +205,7 @@ class TypeScriptParser(LanguageParser):
                 )
                 self._extract_function_types(func_node, sym_name, result)
 
-    def _extract_function_declaration(
-        self, node: Node, source: str, result: ParseResult
-    ) -> None:
+    def _extract_function_declaration(self, node: Node, source: str, result: ParseResult) -> None:
         name_node = node.child_by_field_name("name")
         if name_node is None:
             return
@@ -264,9 +258,7 @@ class TypeScriptParser(LanguageParser):
 
         self._extract_function_types(node, name, result)
 
-    def _extract_variable_declaration(
-        self, node: Node, source: str, result: ParseResult
-    ) -> None:
+    def _extract_variable_declaration(self, node: Node, source: str, result: ParseResult) -> None:
         """Handle arrow functions, function expressions, and require() calls."""
         for child in node.children:
             if child.type != "variable_declarator":
@@ -513,9 +505,7 @@ class TypeScriptParser(LanguageParser):
             if name != "require":
                 result.calls.append(CallInfo(name=name, line=line, arguments=arguments))
 
-    def _extract_new_expression(
-        self, node: Node, source: str, result: ParseResult
-    ) -> None:
+    def _extract_new_expression(self, node: Node, source: str, result: ParseResult) -> None:
         """Handle ``new ClassName(args)`` — emit a CallInfo targeting the class."""
         constructor_node = node.child_by_field_name("constructor")
         if constructor_node is None:
@@ -559,9 +549,7 @@ class TypeScriptParser(LanguageParser):
                 identifiers.append(child.text.decode())
         return identifiers
 
-    def _extract_function_types(
-        self, func_node: Node, func_name: str, result: ParseResult
-    ) -> None:
+    def _extract_function_types(self, func_node: Node, func_name: str, result: ParseResult) -> None:
         """Extract parameter types and return type from a function-like node."""
         params = func_node.child_by_field_name("parameters")
         if params is None:
@@ -612,9 +600,7 @@ class TypeScriptParser(LanguageParser):
                         )
                     )
 
-    def _extract_variable_type_annotation(
-        self, declarator_node: Node, result: ParseResult
-    ) -> None:
+    def _extract_variable_type_annotation(self, declarator_node: Node, result: ParseResult) -> None:
         """Extract type from ``const x: Config = ...``."""
         for child in declarator_node.children:
             if child.type == "type_annotation":

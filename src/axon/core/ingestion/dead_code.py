@@ -23,6 +23,7 @@ _SYMBOL_LABELS: tuple[NodeLabel, ...] = (
 
 _CONSTRUCTOR_NAMES: frozenset[str] = frozenset({"__init__", "__new__"})
 
+
 def _is_test_class(name: str) -> bool:
     """Return ``True`` if *name* follows pytest class convention (``Test*``).
 
@@ -31,12 +32,14 @@ def _is_test_class(name: str) -> bool:
     """
     return len(name) > 4 and name.startswith("Test") and name[4].isupper()
 
+
 def _is_test_file(file_path: str) -> bool:
     """Return ``True`` if the file is in a test directory or is a test file.
 
     Matches paths containing ``/tests/`` or files named ``test_*.py``.
     """
     return "/tests/" in file_path or "/test_" in file_path or file_path.endswith("conftest.py")
+
 
 def _is_dunder(name: str) -> bool:
     """Return ``True`` if *name* is a dunder (double-underscore) method.
@@ -45,6 +48,7 @@ def _is_dunder(name: str) -> bool:
     between (e.g. ``__str__``, ``__repr__``).
     """
     return name.startswith("__") and name.endswith("__") and len(name) > 4
+
 
 def _is_type_referenced(graph: KnowledgeGraph, node_id: str, label: NodeLabel) -> bool:
     """Return ``True`` if *node_id* is a class with incoming USES_TYPE edges.
@@ -58,22 +62,39 @@ def _is_type_referenced(graph: KnowledgeGraph, node_id: str, label: NodeLabel) -
         return False
     return graph.has_incoming(node_id, RelType.USES_TYPE)
 
-_NON_FRAMEWORK_DECORATORS: frozenset[str] = frozenset({
-    "functools.wraps",
-    "functools.lru_cache",
-    "functools.cached_property",
-    "functools.cache",
-})
 
-_FRAMEWORK_DECORATOR_NAMES: frozenset[str] = frozenset({
-    "task", "shared_task", "periodic_task", "job",
-    "receiver", "on_event", "handler",
-    "validator", "field_validator", "root_validator", "model_validator",
-    "contextmanager", "asynccontextmanager",
-    "fixture",
-    "route", "endpoint", "command",
-    "hybrid_property",
-})
+_NON_FRAMEWORK_DECORATORS: frozenset[str] = frozenset(
+    {
+        "functools.wraps",
+        "functools.lru_cache",
+        "functools.cached_property",
+        "functools.cache",
+    }
+)
+
+_FRAMEWORK_DECORATOR_NAMES: frozenset[str] = frozenset(
+    {
+        "task",
+        "shared_task",
+        "periodic_task",
+        "job",
+        "receiver",
+        "on_event",
+        "handler",
+        "validator",
+        "field_validator",
+        "root_validator",
+        "model_validator",
+        "contextmanager",
+        "asynccontextmanager",
+        "fixture",
+        "route",
+        "endpoint",
+        "command",
+        "hybrid_property",
+    }
+)
+
 
 def _has_framework_decorator(node: GraphNode) -> bool:
     """Return ``True`` if *node* has a framework decorator (dotted or undotted)."""
@@ -83,24 +104,39 @@ def _has_framework_decorator(node: GraphNode) -> bool:
         for dec in decorators
     )
 
+
 def _has_property_decorator(node: GraphNode) -> bool:
     """Return ``True`` if *node* is a ``@property`` (accessed as attribute, not called)."""
     decorators: list[str] = node.properties.get("decorators", [])
     return "property" in decorators
 
-_TYPING_STUB_DECORATORS: frozenset[str] = frozenset({
-    "overload", "typing.overload",
-    "abstractmethod", "abc.abstractmethod",
-})
+
+_TYPING_STUB_DECORATORS: frozenset[str] = frozenset(
+    {
+        "overload",
+        "typing.overload",
+        "abstractmethod",
+        "abc.abstractmethod",
+    }
+)
+
 
 def _has_typing_stub_decorator(node: GraphNode) -> bool:
     """Return ``True`` if *node* is an ``@overload`` or ``@abstractmethod`` stub."""
     decorators: list[str] = node.properties.get("decorators", [])
     return any(d in _TYPING_STUB_DECORATORS for d in decorators)
 
-_ENUM_BASES: frozenset[str] = frozenset({
-    "Enum", "IntEnum", "StrEnum", "Flag", "IntFlag",
-})
+
+_ENUM_BASES: frozenset[str] = frozenset(
+    {
+        "Enum",
+        "IntEnum",
+        "StrEnum",
+        "Flag",
+        "IntFlag",
+    }
+)
+
 
 def _is_enum_class(node: GraphNode, label: NodeLabel) -> bool:
     """Return ``True`` if *node* is an enum class (members accessed via dot, not called)."""
@@ -109,13 +145,13 @@ def _is_enum_class(node: GraphNode, label: NodeLabel) -> bool:
     bases: list[str] = node.properties.get("bases", [])
     return bool(_ENUM_BASES & set(bases))
 
+
 def _is_python_public_api(name: str, file_path: str) -> bool:
     """Return ``True`` if *name* is a public symbol in an ``__init__.py`` file."""
     return file_path.endswith("__init__.py") and not name.startswith("_")
 
-def _is_exempt(
-    name: str, is_entry_point: bool, is_exported: bool, file_path: str = ""
-) -> bool:
+
+def _is_exempt(name: str, is_entry_point: bool, is_exported: bool, file_path: str = "") -> bool:
     """Return ``True`` if the symbol is exempt from dead-code flagging.
 
     A symbol is exempt when ANY of the following hold:
@@ -139,6 +175,7 @@ def _is_exempt(
         or _is_dunder(name)
         or _is_python_public_api(name, file_path)
     )
+
 
 def _clear_override_false_positives(graph: KnowledgeGraph) -> int:
     """Un-flag methods that override a non-dead base class method.
@@ -178,6 +215,7 @@ def _clear_override_false_positives(graph: KnowledgeGraph) -> int:
                 break
 
     return cleared
+
 
 def _clear_protocol_conformance_false_positives(graph: KnowledgeGraph) -> int:
     """Un-flag methods on classes that structurally conform to a Protocol.
@@ -243,6 +281,7 @@ def _clear_protocol_conformance_false_positives(graph: KnowledgeGraph) -> int:
 
     return cleared
 
+
 def _clear_protocol_stub_false_positives(graph: KnowledgeGraph) -> int:
     """Un-flag methods on Protocol classes.
 
@@ -270,6 +309,7 @@ def _clear_protocol_stub_false_positives(graph: KnowledgeGraph) -> int:
             logger.debug("Un-flagged protocol stub: %s.%s", method.class_name, method.name)
 
     return cleared
+
 
 def process_dead_code(graph: KnowledgeGraph) -> int:
     """Detect dead (unreachable) symbols and flag them in the graph.

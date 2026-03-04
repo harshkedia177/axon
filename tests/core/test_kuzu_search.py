@@ -207,10 +207,12 @@ class TestEmbeddingsAndVectorSearch:
         backend.add_nodes([n1, n2])
 
         # close_func embedding is close to query, far_func is orthogonal.
-        backend.store_embeddings([
-            NodeEmbedding(node_id=n1.id, embedding=[0.9, 0.1, 0.0]),
-            NodeEmbedding(node_id=n2.id, embedding=[0.0, 0.0, 1.0]),
-        ])
+        backend.store_embeddings(
+            [
+                NodeEmbedding(node_id=n1.id, embedding=[0.9, 0.1, 0.0]),
+                NodeEmbedding(node_id=n2.id, embedding=[0.0, 0.0, 1.0]),
+            ]
+        )
 
         results = backend.vector_search([1.0, 0.0, 0.0], limit=5)
         assert len(results) == 2
@@ -302,10 +304,7 @@ class TestFuzzySearch:
 
     def test_fuzzy_limit(self, backend: KuzuBackend) -> None:
         """Only *limit* results should be returned."""
-        nodes = [
-            _make_node(name=f"func_{i}", file_path=f"src/f{i}.py")
-            for i in range(5)
-        ]
+        nodes = [_make_node(name=f"func_{i}", file_path=f"src/f{i}.py") for i in range(5)]
         backend.add_nodes(nodes)
 
         results = backend.fuzzy_search("func_0", limit=2, max_distance=2)
@@ -313,9 +312,7 @@ class TestFuzzySearch:
 
     def test_fuzzy_result_fields(self, backend: KuzuBackend) -> None:
         """SearchResult should have populated fields."""
-        node = _make_node(
-            name="my_handler", file_path="src/handlers.py", content="handler body"
-        )
+        node = _make_node(name="my_handler", file_path="src/handlers.py", content="handler body")
         backend.add_nodes([node])
 
         results = backend.fuzzy_search("my_handler", limit=10)

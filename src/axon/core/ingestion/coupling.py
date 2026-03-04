@@ -27,6 +27,7 @@ from axon.core.graph.model import (
 
 logger = logging.getLogger(__name__)
 
+
 def parse_git_log(
     repo_path: Path,
     since_months: int = 6,
@@ -53,7 +54,7 @@ def parse_git_log(
         "git",
         "log",
         "--name-only",
-        '--pretty=format:COMMIT:%H',
+        "--pretty=format:COMMIT:%H",
         f"--since={since_months} months ago",
     ]
 
@@ -92,6 +93,7 @@ def parse_git_log(
 
     return commits
 
+
 def build_cochange_matrix(
     commits: list[list[str]],
     min_cochanges: int = 3,
@@ -129,6 +131,7 @@ def build_cochange_matrix(
 
     return {pair: count for pair, count in counts.items() if count >= min_cochanges}
 
+
 def calculate_coupling(
     file_a: str,
     file_b: str,
@@ -156,6 +159,7 @@ def calculate_coupling(
     if max_changes == 0:
         return 0.0
     return co_changes / max_changes
+
 
 def process_coupling(
     graph: KnowledgeGraph,

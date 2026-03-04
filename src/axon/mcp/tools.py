@@ -24,6 +24,8 @@ MAX_TRAVERSE_DEPTH = 10
 def _escape_cypher(value: str) -> str:
     """Escape a string for safe inclusion in a Cypher string literal."""
     return value.replace("\\", "\\\\").replace("'", "\\'")
+
+
 _EMBED_MODEL_NAME = "BAAI/bge-small-en-v1.5"
 
 
@@ -43,6 +45,7 @@ def _resolve_symbol(storage: StorageBackend, symbol: str) -> list:
         if results:
             return results
     return storage.fts_search(symbol, limit=1)
+
 
 def handle_list_repos(registry_dir: Path | None = None) -> str:
     """List indexed repositories by scanning for .axon directories.
@@ -100,6 +103,7 @@ def handle_list_repos(registry_dir: Path | None = None) -> str:
         lines.append("")
 
     return "\n".join(lines)
+
 
 def _group_by_process(
     results: list,
@@ -197,6 +201,7 @@ def handle_query(storage: StorageBackend, query: str, limit: int = 20) -> str:
     groups = _group_by_process(results, storage)
     return _format_query_results(results, groups)
 
+
 def handle_context(storage: StorageBackend, symbol: str) -> str:
     """Provide a 360-degree view of a symbol.
 
@@ -260,6 +265,7 @@ def handle_context(storage: StorageBackend, symbol: str) -> str:
     lines.append("Next: Use impact() if planning changes to this symbol.")
     return "\n".join(lines)
 
+
 _DEPTH_LABELS: dict[int, str] = {
     1: "Direct callers (will break)",
     2: "Indirect (may break)",
@@ -290,9 +296,7 @@ def handle_impact(storage: StorageBackend, symbol: str, depth: int = 3) -> str:
     if not start_node:
         return f"Symbol '{symbol}' not found."
 
-    affected_with_depth = storage.traverse_with_depth(
-        start_node.id, depth, direction="callers"
-    )
+    affected_with_depth = storage.traverse_with_depth(start_node.id, depth, direction="callers")
     if not affected_with_depth:
         return f"No upstream callers found for '{symbol}'."
 
@@ -323,14 +327,14 @@ def handle_impact(storage: StorageBackend, symbol: str, depth: int = 3) -> str:
             conf = conf_lookup.get(node.id)
             tag = f"  (confidence: {conf:.2f})" if conf is not None else ""
             lines.append(
-                f"  {counter}. {node.name} ({label}) -- "
-                f"{node.file_path}:{node.start_line}{tag}"
+                f"  {counter}. {node.name} ({label}) -- {node.file_path}:{node.start_line}{tag}"
             )
             counter += 1
 
     lines.append("")
     lines.append("Tip: Review each affected symbol before making changes.")
     return "\n".join(lines)
+
 
 def handle_dead_code(storage: StorageBackend) -> str:
     """List all symbols marked as dead code.
@@ -348,8 +352,10 @@ def handle_dead_code(storage: StorageBackend) -> str:
 
     return get_dead_code_list(storage)
 
+
 _DIFF_FILE_PATTERN = re.compile(r"^diff --git a/(.+?) b/(.+?)$", re.MULTILINE)
 _DIFF_HUNK_PATTERN = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@", re.MULTILINE)
+
 
 def handle_detect_changes(storage: StorageBackend, diff: str) -> str:
     """Map git diff output to affected symbols.
@@ -407,9 +413,7 @@ def handle_detect_changes(storage: StorageBackend, diff: str) -> str:
                 label_prefix = node_id.split(":", 1)[0] if node_id else ""
                 for start, end in ranges:
                     if start_line <= end and end_line >= start:
-                        affected_symbols.append(
-                            (name, label_prefix.title(), start_line, end_line)
-                        )
+                        affected_symbols.append((name, label_prefix.title(), start_line, end_line))
                         break
         except Exception as exc:
             logger.warning("Failed to query symbols for %s: %s", file_path, exc, exc_info=True)
@@ -432,10 +436,12 @@ def handle_detect_changes(storage: StorageBackend, diff: str) -> str:
     lines.append("Next: Use impact() on affected symbols to see downstream effects.")
     return "\n".join(lines)
 
+
 _WRITE_KEYWORDS = re.compile(
     r"\b(DELETE|DROP|CREATE|SET|REMOVE|MERGE|DETACH|INSTALL|LOAD|COPY)\b",
     re.IGNORECASE,
 )
+
 
 def handle_cypher(storage: StorageBackend, query: str) -> str:
     """Execute a raw Cypher query and return formatted results.

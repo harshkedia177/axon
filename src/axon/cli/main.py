@@ -19,6 +19,7 @@ from axon import __version__
 console = Console()
 logger = logging.getLogger(__name__)
 
+
 def _load_storage(repo_path: Path | None = None) -> "KuzuBackend":  # noqa: F821
     """Load the KuzuDB backend for the given or current repo."""
     from axon.core.storage.kuzu_backend import KuzuBackend
@@ -26,9 +27,7 @@ def _load_storage(repo_path: Path | None = None) -> "KuzuBackend":  # noqa: F821
     target = (repo_path or Path.cwd()).resolve()
     db_path = target / ".axon" / "kuzu"
     if not db_path.exists():
-        console.print(
-            f"[red]Error:[/red] No index found at {target}. Run 'axon analyze' first."
-        )
+        console.print(f"[red]Error:[/red] No index found at {target}. Run 'axon analyze' first.")
         raise typer.Exit(code=1)
 
     storage = KuzuBackend()
@@ -75,9 +74,7 @@ def _register_in_global_registry(meta: dict, repo_path: Path) -> None:
 
     registry_meta = dict(meta)
     registry_meta["slug"] = slug
-    (slot / "meta.json").write_text(
-        json.dumps(registry_meta, indent=2) + "\n", encoding="utf-8"
-    )
+    (slot / "meta.json").write_text(json.dumps(registry_meta, indent=2) + "\n", encoding="utf-8")
 
 
 def _build_meta(result: "PipelineResult", repo_path: Path) -> dict:  # noqa: F821
@@ -106,11 +103,13 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 
+
 def _version_callback(value: bool) -> None:
     """Print the version and exit."""
     if value:
         console.print(f"Axon v{__version__}")
         raise typer.Exit()
+
 
 @app.callback()
 def main(
@@ -125,11 +124,14 @@ def main(
 ) -> None:
     """Axon — Graph-powered code intelligence engine."""
 
+
 @app.command()
 def analyze(
     path: Path = typer.Argument(Path("."), help="Path to the repository to index."),
     full: bool = typer.Option(False, "--full", help="Perform a full re-index."),
-    no_embeddings: bool = typer.Option(False, "--no-embeddings", help="Skip vector embedding generation."),
+    no_embeddings: bool = typer.Option(
+        False, "--no-embeddings", help="Skip vector embedding generation."
+    ),
 ) -> None:
     """Index a repository into a knowledge graph."""
     from axon.core.ingestion.pipeline import PipelineResult, run_pipeline
@@ -197,6 +199,7 @@ def analyze(
 
     storage.close()
 
+
 @app.command()
 def status() -> None:
     """Show index status for current repository."""
@@ -204,9 +207,7 @@ def status() -> None:
     meta_path = repo_path / ".axon" / "meta.json"
 
     if not meta_path.exists():
-        console.print(
-            f"[red]Error:[/red] No index found at {repo_path}. Run 'axon analyze' first."
-        )
+        console.print(f"[red]Error:[/red] No index found at {repo_path}. Run 'axon analyze' first.")
         raise typer.Exit(code=1)
 
     meta = json.loads(meta_path.read_text(encoding="utf-8"))
@@ -228,6 +229,7 @@ def status() -> None:
     if stats.get("coupled_pairs", 0) > 0:
         console.print(f"  Coupled pairs:  {stats['coupled_pairs']}")
 
+
 @app.command(name="list")
 def list_repos() -> None:
     """List all indexed repositories."""
@@ -235,6 +237,7 @@ def list_repos() -> None:
 
     result = handle_list_repos()
     console.print(result)
+
 
 @app.command()
 def clean(
@@ -245,9 +248,7 @@ def clean(
     axon_dir = repo_path / ".axon"
 
     if not axon_dir.exists():
-        console.print(
-            f"[red]Error:[/red] No index found at {repo_path}. Nothing to clean."
-        )
+        console.print(f"[red]Error:[/red] No index found at {repo_path}. Nothing to clean.")
         raise typer.Exit(code=1)
 
     if not force:
@@ -258,6 +259,7 @@ def clean(
 
     shutil.rmtree(axon_dir)
     console.print(f"[green]Deleted[/green] {axon_dir}")
+
 
 @app.command()
 def query(
@@ -272,6 +274,7 @@ def query(
     console.print(result)
     storage.close()
 
+
 @app.command()
 def context(
     name: str = typer.Argument(..., help="Symbol name to inspect."),
@@ -283,6 +286,7 @@ def context(
     result = handle_context(storage, name)
     console.print(result)
     storage.close()
+
 
 @app.command()
 def impact(
@@ -297,6 +301,7 @@ def impact(
     console.print(result)
     storage.close()
 
+
 @app.command(name="dead-code")
 def dead_code() -> None:
     """List all detected dead code."""
@@ -306,6 +311,7 @@ def dead_code() -> None:
     result = handle_dead_code(storage)
     console.print(result)
     storage.close()
+
 
 @app.command()
 def cypher(
@@ -318,6 +324,7 @@ def cypher(
     result = handle_cypher(storage, query)
     console.print(result)
     storage.close()
+
 
 @app.command()
 def setup(
@@ -339,6 +346,7 @@ def setup(
     if cursor or (not claude and not cursor):
         console.print("[bold]Add to your Cursor MCP config:[/bold]")
         console.print(json.dumps({"axon": mcp_config}, indent=2))
+
 
 @app.command()
 def watch() -> None:
@@ -370,9 +378,12 @@ def watch() -> None:
     finally:
         storage.close()
 
+
 @app.command()
 def diff(
-    branch_range: str = typer.Argument(..., help="Branch range for comparison (e.g. main..feature)."),
+    branch_range: str = typer.Argument(
+        ..., help="Branch range for comparison (e.g. main..feature)."
+    ),
 ) -> None:
     """Structural branch comparison."""
     from axon.core.diff import diff_branches, format_diff
@@ -386,6 +397,7 @@ def diff(
 
     console.print(format_diff(result))
 
+
 @app.command()
 def mcp() -> None:
     """Start MCP server (stdio transport)."""
@@ -395,9 +407,12 @@ def mcp() -> None:
 
     asyncio.run(mcp_main())
 
+
 @app.command()
 def serve(
-    watch: bool = typer.Option(False, "--watch", "-w", help="Enable file watching with auto-reindex."),
+    watch: bool = typer.Option(
+        False, "--watch", "-w", help="Enable file watching with auto-reindex."
+    ),
 ) -> None:
     """Start MCP server, optionally with live file watching."""
     import asyncio
@@ -454,6 +469,7 @@ def serve(
         stop = asyncio.Event()
 
         async with stdio_server() as (read, write):
+
             async def _mcp_then_stop():
                 await mcp_server.run(read, write, mcp_server.create_initialization_options())
                 stop.set()

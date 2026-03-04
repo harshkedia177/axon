@@ -76,6 +76,7 @@ def _get_storage() -> KuzuBackend:
             logger.warning("No .axon/kuzu directory found in %s", Path.cwd())
     return _storage
 
+
 TOOLS: list[Tool] = [
     Tool(
         name="axon_list_repos",
@@ -138,7 +139,9 @@ TOOLS: list[Tool] = [
                 },
                 "depth": {
                     "type": "integer",
-                    "description": f"Maximum traversal depth (default 3, max {MAX_TRAVERSE_DEPTH}).",
+                    "description": (
+                        f"Maximum traversal depth (default 3, max {MAX_TRAVERSE_DEPTH})."
+                    ),
                     "default": 3,
                     "minimum": 1,
                     "maximum": MAX_TRAVERSE_DEPTH,
@@ -188,10 +191,12 @@ TOOLS: list[Tool] = [
     ),
 ]
 
+
 @server.list_tools()
 async def list_tools() -> list[Tool]:
     """Return the list of available Axon tools."""
     return TOOLS
+
 
 def _dispatch_tool(name: str, arguments: dict, storage: KuzuBackend) -> str:
     """Synchronous tool dispatch — called directly or via ``asyncio.to_thread``."""
@@ -226,6 +231,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
     return [TextContent(type="text", text=result)]
 
+
 @server.list_resources()
 async def list_resources() -> list[Resource]:
     """Return the list of available Axon resources."""
@@ -250,6 +256,7 @@ async def list_resources() -> list[Resource]:
         ),
     ]
 
+
 def _dispatch_resource(uri_str: str, storage: KuzuBackend) -> str:
     """Synchronous resource dispatch."""
     if uri_str == "axon://overview":
@@ -272,10 +279,12 @@ async def read_resource(uri) -> str:
             return await asyncio.to_thread(_dispatch_resource, uri_str, storage)
     return _dispatch_resource(uri_str, storage)
 
+
 async def main() -> None:
     """Run the Axon MCP server over stdio transport."""
     async with stdio_server() as (read, write):
         await server.run(read, write, server.create_initialization_options())
+
 
 if __name__ == "__main__":
     asyncio.run(main())

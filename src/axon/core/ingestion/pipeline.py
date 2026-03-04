@@ -59,12 +59,14 @@ class PipelineResult:
     incremental: bool = False
     changed_files: int = 0
 
+
 _SYMBOL_LABELS: frozenset[NodeLabel] = frozenset(NodeLabel) - {
     NodeLabel.FILE,
     NodeLabel.FOLDER,
     NodeLabel.COMMUNITY,
     NodeLabel.PROCESS,
 }
+
 
 def run_pipeline(
     repo_path: Path,
@@ -175,6 +177,7 @@ def run_pipeline(
                 report("Generating embeddings", 1.0)
             except Exception:
                 import logging as _logging
+
                 _logging.getLogger(__name__).warning(
                     "Embedding phase failed — search will use FTS only",
                     exc_info=True,
@@ -184,6 +187,7 @@ def run_pipeline(
     result.duration_seconds = time.monotonic() - start
 
     return graph, result
+
 
 def reindex_files(
     file_entries: list[FileEntry],
@@ -240,6 +244,7 @@ def reindex_files(
     storage.rebuild_fts_indexes()
 
     return graph
+
 
 def build_graph(repo_path: Path) -> KnowledgeGraph:
     """Run phases 1-11 and return the in-memory graph (no storage load).

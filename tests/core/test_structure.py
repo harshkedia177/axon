@@ -20,7 +20,7 @@ def graph() -> KnowledgeGraph:
     return KnowledgeGraph()
 
 
-def _make_files(*paths: str, content: str = "", language: str = "python") -> list[FileInfo]:
+def _make_files(*paths: str, content: str = "", language: str = "python") -> list[FileEntry]:
     """Build a list of FileInfo entries from paths with shared defaults."""
     return [FileEntry(path=p, content=content, language=language) for p in paths]
 

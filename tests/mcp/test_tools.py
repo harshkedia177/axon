@@ -499,7 +499,7 @@ class TestConfidenceInContext:
         assert "login_handler" in result
         # There should be no "(?)" for the high-confidence caller
         lines = result.split("\n")
-        caller_line = [l for l in lines if "login_handler" in l][0]
+        caller_line = [line for line in lines if "login_handler" in line][0]
         assert "(?)" not in caller_line
         assert "(~)" not in caller_line
 
@@ -547,8 +547,11 @@ class TestFormatQueryResults:
         """With no groups, results appear inline."""
         results = [
             SearchResult(
-                node_id="func:a", score=1.0, node_name="foo",
-                file_path="src/a.py", label="function",
+                node_id="func:a",
+                score=1.0,
+                node_name="foo",
+                file_path="src/a.py",
+                label="function",
             ),
         ]
         output = _format_query_results(results, {})
@@ -559,12 +562,18 @@ class TestFormatQueryResults:
     def test_with_groups(self):
         """Grouped results appear under process section headers."""
         r1 = SearchResult(
-            node_id="func:a", score=1.0, node_name="login",
-            file_path="src/auth.py", label="function",
+            node_id="func:a",
+            score=1.0,
+            node_name="login",
+            file_path="src/auth.py",
+            label="function",
         )
         r2 = SearchResult(
-            node_id="func:b", score=0.9, node_name="helper",
-            file_path="src/utils.py", label="function",
+            node_id="func:b",
+            score=0.9,
+            node_name="helper",
+            file_path="src/utils.py",
+            label="function",
         )
         groups = {"Auth Flow": [r1]}
         output = _format_query_results([r1, r2], groups)
@@ -578,14 +587,18 @@ class TestFormatQueryResults:
         long_snippet = "x" * 300
         results = [
             SearchResult(
-                node_id="func:a", score=1.0, node_name="foo",
-                file_path="src/a.py", label="function", snippet=long_snippet,
+                node_id="func:a",
+                score=1.0,
+                node_name="foo",
+                file_path="src/a.py",
+                label="function",
+                snippet=long_snippet,
             ),
         ]
         output = _format_query_results(results, {})
         # Snippet in output should be at most 200 chars
         lines = output.split("\n")
-        snippet_lines = [l for l in lines if l.strip().startswith("xxx")]
+        snippet_lines = [line for line in lines if line.strip().startswith("xxx")]
         for line in snippet_lines:
             assert len(line.strip()) <= 200
 
@@ -617,7 +630,8 @@ class TestImpactDepthGrouping:
             end_line=50,
         )
         mock_storage.traverse_with_depth.return_value = [
-            (_login, 1), (_register, 2),
+            (_login, 1),
+            (_register, 2),
         ]
         mock_storage.get_callers_with_confidence.return_value = [(_login, 0.8)]
 

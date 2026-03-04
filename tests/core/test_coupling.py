@@ -127,9 +127,7 @@ class TestCalculateCoupling:
 class TestProcessCoupling:
     """process_coupling creates COUPLED_WITH relationships in the graph."""
 
-    def test_process_coupling_creates_relationships(
-        self, graph: KnowledgeGraph
-    ) -> None:
+    def test_process_coupling_creates_relationships(self, graph: KnowledgeGraph) -> None:
         """Mock git log via the commits parameter, verify COUPLED_WITH edges."""
         # auth.py and models.py change together 4 times out of 5 commits each.
         # views.py and utils.py change together only once.
@@ -162,11 +160,7 @@ class TestProcessCoupling:
         models_id = generate_id(NodeLabel.FILE, "src/models.py")
 
         auth_models_rel = next(
-            (
-                r
-                for r in coupled_rels
-                if r.source == auth_id and r.target == models_id
-            ),
+            (r for r in coupled_rels if r.source == auth_id and r.target == models_id),
             None,
         )
         assert auth_models_rel is not None
@@ -186,9 +180,7 @@ class TestProcessCoupling:
         coupled_rels = graph.get_relationships_by_type(RelType.COUPLED_WITH)
         assert len(coupled_rels) == 0
 
-    def test_process_coupling_filters_weak_pairs(
-        self, graph: KnowledgeGraph
-    ) -> None:
+    def test_process_coupling_filters_weak_pairs(self, graph: KnowledgeGraph) -> None:
         """Pairs below min_strength are not added to the graph."""
         # auth changes 10 times, models 10 times, but they co-change only twice.
         # coupling = 2/10 = 0.2 which is below min_strength=0.3
@@ -217,9 +209,7 @@ class TestProcessCoupling:
         )
         assert count == 0
 
-    def test_process_coupling_relationship_id_format(
-        self, graph: KnowledgeGraph
-    ) -> None:
+    def test_process_coupling_relationship_id_format(self, graph: KnowledgeGraph) -> None:
         """Relationship IDs follow the coupled:{id_a}->{id_b} pattern."""
         commits = [
             ["src/auth.py", "src/models.py"],

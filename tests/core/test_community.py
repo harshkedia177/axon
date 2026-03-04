@@ -143,15 +143,11 @@ class TestExportToIgraph:
 class TestProcessCommunities:
     """process_communities detects clusters and creates graph entities."""
 
-    def test_process_communities_creates_nodes(
-        self, two_cluster_graph: KnowledgeGraph
-    ) -> None:
+    def test_process_communities_creates_nodes(self, two_cluster_graph: KnowledgeGraph) -> None:
         """Community nodes are created in the graph."""
         process_communities(two_cluster_graph)
 
-        community_nodes = two_cluster_graph.get_nodes_by_label(
-            NodeLabel.COMMUNITY
-        )
+        community_nodes = two_cluster_graph.get_nodes_by_label(NodeLabel.COMMUNITY)
         assert len(community_nodes) >= 1
         # Each community node must have the correct label.
         for node in community_nodes:
@@ -160,15 +156,11 @@ class TestProcessCommunities:
             assert "symbol_count" in node.properties
             assert "cohesion" in node.properties
 
-    def test_process_communities_creates_member_of(
-        self, two_cluster_graph: KnowledgeGraph
-    ) -> None:
+    def test_process_communities_creates_member_of(self, two_cluster_graph: KnowledgeGraph) -> None:
         """MEMBER_OF relationships are created from members to communities."""
         process_communities(two_cluster_graph)
 
-        member_rels = two_cluster_graph.get_relationships_by_type(
-            RelType.MEMBER_OF
-        )
+        member_rels = two_cluster_graph.get_relationships_by_type(RelType.MEMBER_OF)
         assert len(member_rels) >= 2  # At least some members assigned.
 
         # Every MEMBER_OF target must be a COMMUNITY node.
@@ -184,15 +176,11 @@ class TestProcessCommunities:
             assert source_node is not None
             assert source_node.label in callable_labels
 
-    def test_process_communities_returns_count(
-        self, two_cluster_graph: KnowledgeGraph
-    ) -> None:
+    def test_process_communities_returns_count(self, two_cluster_graph: KnowledgeGraph) -> None:
         """Return value matches the number of Community nodes created."""
         count = process_communities(two_cluster_graph)
 
-        community_nodes = two_cluster_graph.get_nodes_by_label(
-            NodeLabel.COMMUNITY
-        )
+        community_nodes = two_cluster_graph.get_nodes_by_label(NodeLabel.COMMUNITY)
         assert count == len(community_nodes)
         assert count >= 1
 

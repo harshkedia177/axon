@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 _JS_TS_EXTENSIONS = (".ts", ".js", ".tsx", ".jsx")
 
+
 def build_file_index(graph: KnowledgeGraph) -> dict[str, str]:
     """Build an index mapping file paths to their graph node IDs.
 
@@ -38,6 +39,7 @@ def build_file_index(graph: KnowledgeGraph) -> dict[str, str]:
     """
     file_nodes = graph.get_nodes_by_label(NodeLabel.FILE)
     return {node.file_path: node.id for node in file_nodes}
+
 
 def resolve_import_path(
     importing_file: str,
@@ -68,6 +70,7 @@ def resolve_import_path(
         return _resolve_js_ts(importing_file, import_info, file_index)
 
     return None
+
 
 def process_imports(
     parse_data: list[FileParseData],
@@ -110,6 +113,7 @@ def process_imports(
                 )
             )
 
+
 def _detect_language(file_path: str) -> str:
     """Infer language from a file's extension."""
     suffix = PurePosixPath(file_path).suffix.lower()
@@ -120,6 +124,7 @@ def _detect_language(file_path: str) -> str:
     if suffix in (".js", ".jsx"):
         return "javascript"
     return ""
+
 
 def _resolve_python(
     importing_file: str,
@@ -138,6 +143,7 @@ def _resolve_python(
     if import_info.is_relative:
         return _resolve_python_relative(importing_file, import_info, file_index)
     return _resolve_python_absolute(import_info, file_index)
+
 
 def _resolve_python_relative(
     importing_file: str,
@@ -175,6 +181,7 @@ def _resolve_python_relative(
 
     return _try_python_paths(str(target_dir), file_index)
 
+
 def _resolve_python_absolute(
     import_info: ImportInfo,
     file_index: dict[str, str],
@@ -189,6 +196,7 @@ def _resolve_python_absolute(
     segments = module.split(".")
     target_path = str(PurePosixPath(*segments))
     return _try_python_paths(target_path, file_index)
+
 
 def _try_python_paths(base_path: str, file_index: dict[str, str]) -> str | None:
     """Try common Python file resolution patterns for *base_path*.
@@ -205,6 +213,7 @@ def _try_python_paths(base_path: str, file_index: dict[str, str]) -> str | None:
         if candidate in file_index:
             return file_index[candidate]
     return None
+
 
 def _resolve_js_ts(
     importing_file: str,
@@ -228,6 +237,7 @@ def _resolve_js_ts(
     resolved_str = str(PurePosixPath(*resolved.parts))
 
     return _try_js_ts_paths(resolved_str, file_index)
+
 
 def _try_js_ts_paths(base_path: str, file_index: dict[str, str]) -> str | None:
     """Try common JS/TS file resolution patterns for *base_path*.

@@ -103,9 +103,7 @@ class TestInitializeAndClose:
 
 
 class TestBulkLoad:
-    def test_bulk_load_inserts_nodes_and_relationships(
-        self, backend: KuzuBackend
-    ) -> None:
+    def test_bulk_load_inserts_nodes_and_relationships(self, backend: KuzuBackend) -> None:
         graph = _build_small_graph()
         backend.bulk_load(graph)
 
@@ -392,17 +390,11 @@ class TestLoadGraph:
 
 
 class TestDeleteSyntheticNodes:
-    def test_removes_community_and_process_keeps_function(
-        self, backend: KuzuBackend
-    ) -> None:
+    def test_removes_community_and_process_keeps_function(self, backend: KuzuBackend) -> None:
         """Store fn + community + process with edges. After delete, only fn remains."""
         fn = _make_node(name="real_func", file_path="src/a.py")
-        comm = _make_node(
-            label=NodeLabel.COMMUNITY, name="comm_1", file_path=""
-        )
-        proc = _make_node(
-            label=NodeLabel.PROCESS, name="proc_1", file_path=""
-        )
+        comm = _make_node(label=NodeLabel.COMMUNITY, name="comm_1", file_path="")
+        proc = _make_node(label=NodeLabel.PROCESS, name="proc_1", file_path="")
         backend.add_nodes([fn, comm, proc])
 
         # Add MEMBER_OF edge (fn -> community) and STEP_IN_PROCESS (fn -> process).
@@ -436,9 +428,7 @@ class TestUpsertEmbeddings:
         backend.store_embeddings([emb_a])
         backend.upsert_embeddings([emb_b])
 
-        rows = backend.execute_raw(
-            "MATCH (e:Embedding) RETURN e.node_id ORDER BY e.node_id"
-        )
+        rows = backend.execute_raw("MATCH (e:Embedding) RETURN e.node_id ORDER BY e.node_id")
         node_ids = [r[0] for r in rows]
         assert "function:src/a.py:alpha" in node_ids
         assert "function:src/a.py:beta" in node_ids
@@ -448,14 +438,11 @@ class TestUpsertEmbeddings:
         emb = NodeEmbedding(node_id="function:src/a.py:alpha", embedding=[1.0, 2.0])
         backend.store_embeddings([emb])
 
-        updated = NodeEmbedding(
-            node_id="function:src/a.py:alpha", embedding=[9.0, 8.0]
-        )
+        updated = NodeEmbedding(node_id="function:src/a.py:alpha", embedding=[9.0, 8.0])
         backend.upsert_embeddings([updated])
 
         rows = backend.execute_raw(
-            "MATCH (e:Embedding) WHERE e.node_id = 'function:src/a.py:alpha' "
-            "RETURN e.vec"
+            "MATCH (e:Embedding) WHERE e.node_id = 'function:src/a.py:alpha' RETURN e.vec"
         )
         assert len(rows) == 1
         assert rows[0][0][0] == 9.0

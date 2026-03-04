@@ -44,9 +44,7 @@ def _add_symbol_node(
     class_name: str = "",
 ) -> str:
     """Add a symbol node and return its ID."""
-    symbol_name = (
-        f"{class_name}.{name}" if label == NodeLabel.METHOD and class_name else name
-    )
+    symbol_name = f"{class_name}.{name}" if label == NodeLabel.METHOD and class_name else name
     node_id = generate_id(label, file_path, symbol_name)
     graph.add_node(
         GraphNode(
@@ -105,15 +103,9 @@ def graph() -> KnowledgeGraph:
     _add_file_node(g, "src/utils.py")
 
     # Symbols
-    main_id = _add_symbol_node(
-        g, NodeLabel.FUNCTION, "src/main.py", "main", is_entry_point=True
-    )
-    validate_id = _add_symbol_node(
-        g, NodeLabel.FUNCTION, "src/auth.py", "validate"
-    )
-    _add_symbol_node(
-        g, NodeLabel.FUNCTION, "src/auth.py", "unused_helper"
-    )
+    main_id = _add_symbol_node(g, NodeLabel.FUNCTION, "src/main.py", "main", is_entry_point=True)
+    validate_id = _add_symbol_node(g, NodeLabel.FUNCTION, "src/auth.py", "validate")
+    _add_symbol_node(g, NodeLabel.FUNCTION, "src/auth.py", "unused_helper")
     _add_symbol_node(
         g,
         NodeLabel.METHOD,
@@ -121,12 +113,8 @@ def graph() -> KnowledgeGraph:
         "__init__",
         class_name="User",
     )
-    _add_symbol_node(
-        g, NodeLabel.FUNCTION, "src/tests/test_auth.py", "test_validate"
-    )
-    _add_symbol_node(
-        g, NodeLabel.FUNCTION, "src/utils.py", "orphan_function"
-    )
+    _add_symbol_node(g, NodeLabel.FUNCTION, "src/tests/test_auth.py", "test_validate")
+    _add_symbol_node(g, NodeLabel.FUNCTION, "src/utils.py", "orphan_function")
 
     # CALLS: main -> validate
     _add_calls_relationship(g, main_id, validate_id)
@@ -145,9 +133,7 @@ class TestDetectsUnusedFunction:
     def test_detects_unused_function(self, graph: KnowledgeGraph) -> None:
         process_dead_code(graph)
 
-        unused_id = generate_id(
-            NodeLabel.FUNCTION, "src/auth.py", "unused_helper"
-        )
+        unused_id = generate_id(NodeLabel.FUNCTION, "src/auth.py", "unused_helper")
         node = graph.get_node(unused_id)
         assert node is not None
         assert node.is_dead is True
@@ -171,9 +157,7 @@ class TestSkipsCalledFunctions:
     def test_skips_called_functions(self, graph: KnowledgeGraph) -> None:
         process_dead_code(graph)
 
-        validate_id = generate_id(
-            NodeLabel.FUNCTION, "src/auth.py", "validate"
-        )
+        validate_id = generate_id(NodeLabel.FUNCTION, "src/auth.py", "validate")
         node = graph.get_node(validate_id)
         assert node is not None
         assert node.is_dead is False
@@ -185,9 +169,7 @@ class TestSkipsConstructors:
     def test_skips_constructors(self, graph: KnowledgeGraph) -> None:
         process_dead_code(graph)
 
-        init_id = generate_id(
-            NodeLabel.METHOD, "src/models.py", "User.__init__"
-        )
+        init_id = generate_id(NodeLabel.METHOD, "src/models.py", "User.__init__")
         node = graph.get_node(init_id)
         assert node is not None
         assert node.is_dead is False
@@ -199,9 +181,7 @@ class TestSkipsTestFunctions:
     def test_skips_test_functions(self, graph: KnowledgeGraph) -> None:
         process_dead_code(graph)
 
-        test_id = generate_id(
-            NodeLabel.FUNCTION, "src/tests/test_auth.py", "test_validate"
-        )
+        test_id = generate_id(NodeLabel.FUNCTION, "src/tests/test_auth.py", "test_validate")
         node = graph.get_node(test_id)
         assert node is not None
         assert node.is_dead is False
@@ -230,12 +210,8 @@ class TestSkipsDunderMethods:
 
         process_dead_code(g)
 
-        str_id = generate_id(
-            NodeLabel.METHOD, "src/models.py", "User.__str__"
-        )
-        repr_id = generate_id(
-            NodeLabel.METHOD, "src/models.py", "User.__repr__"
-        )
+        str_id = generate_id(NodeLabel.METHOD, "src/models.py", "User.__str__")
+        repr_id = generate_id(NodeLabel.METHOD, "src/models.py", "User.__repr__")
 
         str_node = g.get_node(str_id)
         repr_node = g.get_node(repr_id)
@@ -301,11 +277,12 @@ class TestSkipsTypeReferencedClasses:
         _add_file_node(g, "src/models.py")
         _add_file_node(g, "src/handler.py")
 
-        class_id = _add_symbol_node(
-            g, NodeLabel.CLASS, "src/models.py", "Status"
-        )
+        class_id = _add_symbol_node(g, NodeLabel.CLASS, "src/models.py", "Status")
         func_id = _add_symbol_node(
-            g, NodeLabel.FUNCTION, "src/handler.py", "handle",
+            g,
+            NodeLabel.FUNCTION,
+            "src/handler.py",
+            "handle",
             is_entry_point=True,
         )
         _add_uses_type_relationship(g, func_id, class_id)
@@ -322,11 +299,12 @@ class TestSkipsTypeReferencedClasses:
         _add_file_node(g, "src/utils.py")
         _add_file_node(g, "src/handler.py")
 
-        func_id = _add_symbol_node(
-            g, NodeLabel.FUNCTION, "src/utils.py", "unused_func"
-        )
+        func_id = _add_symbol_node(g, NodeLabel.FUNCTION, "src/utils.py", "unused_func")
         other_id = _add_symbol_node(
-            g, NodeLabel.FUNCTION, "src/handler.py", "handle",
+            g,
+            NodeLabel.FUNCTION,
+            "src/handler.py",
+            "handle",
             is_entry_point=True,
         )
         _add_uses_type_relationship(g, other_id, func_id)
@@ -349,9 +327,7 @@ class TestSkipsFrameworkDecoratedFunctions:
     def test_framework_decorated_function_not_dead(self) -> None:
         g = KnowledgeGraph()
         _add_file_node(g, "src/server.py")
-        node_id = _add_symbol_node(
-            g, NodeLabel.FUNCTION, "src/server.py", "list_tools"
-        )
+        node_id = _add_symbol_node(g, NodeLabel.FUNCTION, "src/server.py", "list_tools")
         node = g.get_node(node_id)
         assert node is not None
         node.properties["decorators"] = ["server.list_tools"]
@@ -364,9 +340,7 @@ class TestSkipsFrameworkDecoratedFunctions:
         """Decorators without dots (e.g., @staticmethod) do not exempt."""
         g = KnowledgeGraph()
         _add_file_node(g, "src/utils.py")
-        node_id = _add_symbol_node(
-            g, NodeLabel.FUNCTION, "src/utils.py", "unused"
-        )
+        node_id = _add_symbol_node(g, NodeLabel.FUNCTION, "src/utils.py", "unused")
         node = g.get_node(node_id)
         assert node is not None
         node.properties["decorators"] = ["staticmethod"]
@@ -379,9 +353,7 @@ class TestSkipsFrameworkDecoratedFunctions:
         """@typing.overload stubs are not dead — they define type signatures."""
         g = KnowledgeGraph()
         _add_file_node(g, "src/utils.py")
-        node_id = _add_symbol_node(
-            g, NodeLabel.FUNCTION, "src/utils.py", "overloaded"
-        )
+        node_id = _add_symbol_node(g, NodeLabel.FUNCTION, "src/utils.py", "overloaded")
         node = g.get_node(node_id)
         assert node is not None
         node.properties["decorators"] = ["typing.overload"]
@@ -394,9 +366,7 @@ class TestSkipsFrameworkDecoratedFunctions:
         """Known non-framework dotted decorators (functools.wraps) don't exempt."""
         g = KnowledgeGraph()
         _add_file_node(g, "src/utils.py")
-        node_id = _add_symbol_node(
-            g, NodeLabel.FUNCTION, "src/utils.py", "wrapper"
-        )
+        node_id = _add_symbol_node(g, NodeLabel.FUNCTION, "src/utils.py", "wrapper")
         node = g.get_node(node_id)
         assert node is not None
         node.properties["decorators"] = ["functools.wraps"]
@@ -421,39 +391,50 @@ class TestProtocolConformance:
         _add_file_node(g, "src/main.py")
 
         # Protocol class with is_protocol annotation
-        proto_id = _add_symbol_node(
-            g, NodeLabel.CLASS, "src/base.py", "StorageBackend"
-        )
+        proto_id = _add_symbol_node(g, NodeLabel.CLASS, "src/base.py", "StorageBackend")
         proto_node = g.get_node(proto_id)
         assert proto_node is not None
         proto_node.properties["is_protocol"] = True
 
         # Protocol methods
         proto_init_id = _add_symbol_node(
-            g, NodeLabel.METHOD, "src/base.py", "initialize",
+            g,
+            NodeLabel.METHOD,
+            "src/base.py",
+            "initialize",
             class_name="StorageBackend",
         )
         proto_close_id = _add_symbol_node(
-            g, NodeLabel.METHOD, "src/base.py", "close",
+            g,
+            NodeLabel.METHOD,
+            "src/base.py",
+            "close",
             class_name="StorageBackend",
         )
 
         # Concrete class structurally conforming (has both methods)
-        _add_symbol_node(
-            g, NodeLabel.CLASS, "src/impl.py", "KuzuBackend"
-        )
+        _add_symbol_node(g, NodeLabel.CLASS, "src/impl.py", "KuzuBackend")
         impl_init_id = _add_symbol_node(
-            g, NodeLabel.METHOD, "src/impl.py", "initialize",
+            g,
+            NodeLabel.METHOD,
+            "src/impl.py",
+            "initialize",
             class_name="KuzuBackend",
         )
         impl_close_id = _add_symbol_node(
-            g, NodeLabel.METHOD, "src/impl.py", "close",
+            g,
+            NodeLabel.METHOD,
+            "src/impl.py",
+            "close",
             class_name="KuzuBackend",
         )
 
         # A caller calls StorageBackend.initialize (not KuzuBackend)
         caller_id = _add_symbol_node(
-            g, NodeLabel.FUNCTION, "src/main.py", "main",
+            g,
+            NodeLabel.FUNCTION,
+            "src/main.py",
+            "main",
             is_entry_point=True,
         )
         _add_calls_relationship(g, caller_id, proto_init_id)
@@ -475,28 +456,33 @@ class TestProtocolConformance:
         _add_file_node(g, "src/base.py")
         _add_file_node(g, "src/partial.py")
 
-        proto_id = _add_symbol_node(
-            g, NodeLabel.CLASS, "src/base.py", "Backend"
-        )
+        proto_id = _add_symbol_node(g, NodeLabel.CLASS, "src/base.py", "Backend")
         proto_node = g.get_node(proto_id)
         assert proto_node is not None
         proto_node.properties["is_protocol"] = True
 
         _add_symbol_node(
-            g, NodeLabel.METHOD, "src/base.py", "initialize",
+            g,
+            NodeLabel.METHOD,
+            "src/base.py",
+            "initialize",
             class_name="Backend",
         )
         _add_symbol_node(
-            g, NodeLabel.METHOD, "src/base.py", "close",
+            g,
+            NodeLabel.METHOD,
+            "src/base.py",
+            "close",
             class_name="Backend",
         )
 
         # Partial class only has "initialize", not "close"
-        _add_symbol_node(
-            g, NodeLabel.CLASS, "src/partial.py", "Partial"
-        )
+        _add_symbol_node(g, NodeLabel.CLASS, "src/partial.py", "Partial")
         partial_method_id = _add_symbol_node(
-            g, NodeLabel.METHOD, "src/partial.py", "initialize",
+            g,
+            NodeLabel.METHOD,
+            "src/partial.py",
+            "initialize",
             class_name="Partial",
         )
 

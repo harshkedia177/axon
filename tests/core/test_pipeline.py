@@ -30,24 +30,17 @@ def tmp_repo(tmp_path: Path) -> Path:
     src.mkdir()
 
     (src / "main.py").write_text(
-        "from .auth import validate\n"
-        "\n"
-        "def main():\n"
-        "    validate()\n",
+        "from .auth import validate\n\ndef main():\n    validate()\n",
         encoding="utf-8",
     )
 
     (src / "auth.py").write_text(
-        "from .utils import helper\n"
-        "\n"
-        "def validate():\n"
-        "    helper()\n",
+        "from .utils import helper\n\ndef validate():\n    helper()\n",
         encoding="utf-8",
     )
 
     (src / "utils.py").write_text(
-        "def helper():\n"
-        "    pass\n",
+        "def helper():\n    pass\n",
         encoding="utf-8",
     )
 
@@ -72,9 +65,7 @@ def storage(tmp_path: Path) -> KuzuBackend:
 class TestRunPipelineBasic:
     """run_pipeline completes without error and returns a PipelineResult."""
 
-    def test_run_pipeline_basic(
-        self, tmp_repo: Path, storage: KuzuBackend
-    ) -> None:
+    def test_run_pipeline_basic(self, tmp_repo: Path, storage: KuzuBackend) -> None:
         _, result = run_pipeline(tmp_repo, storage)
 
         assert isinstance(result, PipelineResult)
@@ -89,9 +80,7 @@ class TestRunPipelineBasic:
 class TestRunPipelineFileCount:
     """The result reports exactly 3 files from the fixture repo."""
 
-    def test_run_pipeline_file_count(
-        self, tmp_repo: Path, storage: KuzuBackend
-    ) -> None:
+    def test_run_pipeline_file_count(self, tmp_repo: Path, storage: KuzuBackend) -> None:
         _, result = run_pipeline(tmp_repo, storage)
 
         assert result.files == 3
@@ -105,9 +94,7 @@ class TestRunPipelineFileCount:
 class TestRunPipelineFindsSymbols:
     """At least 3 symbols are discovered (main, validate, helper)."""
 
-    def test_run_pipeline_finds_symbols(
-        self, tmp_repo: Path, storage: KuzuBackend
-    ) -> None:
+    def test_run_pipeline_finds_symbols(self, tmp_repo: Path, storage: KuzuBackend) -> None:
         _, result = run_pipeline(tmp_repo, storage)
 
         assert result.symbols >= 3
@@ -121,9 +108,7 @@ class TestRunPipelineFindsSymbols:
 class TestRunPipelineFindsRelationships:
     """Relationships are created (CONTAINS, DEFINES, IMPORTS, CALLS)."""
 
-    def test_run_pipeline_finds_relationships(
-        self, tmp_repo: Path, storage: KuzuBackend
-    ) -> None:
+    def test_run_pipeline_finds_relationships(self, tmp_repo: Path, storage: KuzuBackend) -> None:
         _, result = run_pipeline(tmp_repo, storage)
 
         assert result.relationships > 0
@@ -137,9 +122,7 @@ class TestRunPipelineFindsRelationships:
 class TestRunPipelineProgressCallback:
     """The progress callback is invoked with expected phase names."""
 
-    def test_run_pipeline_progress_callback(
-        self, tmp_repo: Path, storage: KuzuBackend
-    ) -> None:
+    def test_run_pipeline_progress_callback(self, tmp_repo: Path, storage: KuzuBackend) -> None:
         calls: list[tuple[str, float]] = []
 
         def callback(phase: str, pct: float) -> None:
@@ -168,9 +151,7 @@ class TestRunPipelineProgressCallback:
 class TestRunPipelineLoadsToStorage:
     """After the pipeline runs, nodes are retrievable from storage."""
 
-    def test_run_pipeline_loads_to_storage(
-        self, tmp_repo: Path, storage: KuzuBackend
-    ) -> None:
+    def test_run_pipeline_loads_to_storage(self, tmp_repo: Path, storage: KuzuBackend) -> None:
         run_pipeline(tmp_repo, storage)
 
         # File nodes should be stored. The walker produces paths relative to
@@ -203,9 +184,7 @@ def rich_repo(tmp_path: Path) -> Path:
     src.mkdir()
 
     (src / "models.py").write_text(
-        "class User:\n"
-        "    def __init__(self, name: str):\n"
-        "        self.name = name\n",
+        "class User:\n    def __init__(self, name: str):\n        self.name = name\n",
         encoding="utf-8",
     )
 
@@ -219,22 +198,17 @@ def rich_repo(tmp_path: Path) -> Path:
     )
 
     (src / "check.py").write_text(
-        "from .verify import verify\n"
-        "\n"
-        "def check(obj) -> bool:\n"
-        "    return verify(obj)\n",
+        "from .verify import verify\n\ndef check(obj) -> bool:\n    return verify(obj)\n",
         encoding="utf-8",
     )
 
     (src / "verify.py").write_text(
-        "def verify(obj) -> bool:\n"
-        "    return obj is not None\n",
+        "def verify(obj) -> bool:\n    return obj is not None\n",
         encoding="utf-8",
     )
 
     (src / "unused.py").write_text(
-        "def orphan_func():\n"
-        "    pass\n",
+        "def orphan_func():\n    pass\n",
         encoding="utf-8",
     )
 
@@ -259,9 +233,7 @@ def rich_storage(tmp_path: Path) -> KuzuBackend:
 class TestRunPipelineFullPhases:
     """Pipeline phases 7-11 populate the corresponding PipelineResult fields."""
 
-    def test_run_pipeline_full_phases(
-        self, rich_repo: Path, rich_storage: KuzuBackend
-    ) -> None:
+    def test_run_pipeline_full_phases(self, rich_repo: Path, rich_storage: KuzuBackend) -> None:
         _, result = run_pipeline(rich_repo, rich_storage)
 
         # Basic sanity checks.
@@ -343,9 +315,7 @@ class TestRunPipelineProgressIncludesNewPhases:
 class TestRunPipelineEmbeddings:
     """The pipeline's embedding phase fires correctly."""
 
-    def test_embedding_phase_in_progress(
-        self, rich_repo: Path, rich_storage: KuzuBackend
-    ) -> None:
+    def test_embedding_phase_in_progress(self, rich_repo: Path, rich_storage: KuzuBackend) -> None:
         """Progress callback includes 'Generating embeddings' phase."""
         calls: list[tuple[str, float]] = []
 

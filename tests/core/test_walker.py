@@ -114,9 +114,7 @@ class TestWalkRepoRelativePaths:
     def test_walk_repo_relative_paths(self, tmp_repo: Path) -> None:
         entries = walk_repo(tmp_repo)
         for entry in entries:
-            assert not Path(entry.path).is_absolute(), (
-                f"Expected relative path, got: {entry.path}"
-            )
+            assert not Path(entry.path).is_absolute(), f"Expected relative path, got: {entry.path}"
 
 
 class TestWalkRepoReadsContent:

@@ -40,6 +40,7 @@ _BUILTIN_TYPES: frozenset[str] = frozenset(
     }
 )
 
+
 class PythonParser(LanguageParser):
     """Parses Python source code using tree-sitter."""
 
@@ -389,7 +390,7 @@ class PythonParser(LanguageParser):
                 # Strip surrounding quotes (single, double, or triple).
                 for quote in ('"""', "'''", '"', "'"):
                     if text.startswith(quote) and text.endswith(quote):
-                        text = text[len(quote):-len(quote)]
+                        text = text[len(quote) : -len(quote)]
                         break
                 if text:
                     result.exports.append(text)

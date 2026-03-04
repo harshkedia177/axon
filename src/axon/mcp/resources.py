@@ -26,9 +26,7 @@ def get_overview(storage: StorageBackend) -> str:
     lines = ["Axon Codebase Overview", "=" * 40, ""]
 
     try:
-        rows = storage.execute_raw(
-            "MATCH (n) RETURN labels(n), count(n) ORDER BY count(n) DESC"
-        )
+        rows = storage.execute_raw("MATCH (n) RETURN labels(n), count(n) ORDER BY count(n) DESC")
         if rows:
             lines.append("Node counts by type:")
             total = 0
@@ -65,6 +63,7 @@ def get_overview(storage: StorageBackend) -> str:
 
     return "\n".join(lines)
 
+
 def get_dead_code_list(storage: StorageBackend) -> str:
     """Generate a formatted list of all dead code in the codebase.
 
@@ -99,6 +98,7 @@ def get_dead_code_list(storage: StorageBackend) -> str:
         lines.append(f"    - {name} (line {start_line})")
 
     return "\n".join(lines)
+
 
 def get_schema() -> str:
     """Return a static description of the Axon knowledge graph schema.

@@ -75,6 +75,7 @@ def hybrid_search(
 
     return merged[:limit]
 
+
 def _accumulate_ranks(
     results: list[SearchResult],
     weight: float,

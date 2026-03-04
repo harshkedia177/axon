@@ -34,6 +34,7 @@ _PYTHON_DECORATOR_PATTERNS: tuple[str, ...] = (
     "@click.command",
 )
 
+
 def find_entry_points(graph: KnowledgeGraph) -> list[GraphNode]:
     """Find functions/methods that serve as execution entry points.
 
@@ -65,6 +66,7 @@ def find_entry_points(graph: KnowledgeGraph) -> list[GraphNode]:
 
     return entry_points
 
+
 def _is_entry_point(node: GraphNode, graph: KnowledgeGraph) -> bool:
     """Determine whether *node* qualifies as an entry point.
 
@@ -92,6 +94,7 @@ def _is_entry_point(node: GraphNode, graph: KnowledgeGraph) -> bool:
 
     return False
 
+
 def _matches_framework_pattern(node: GraphNode) -> bool:
     """Check whether *node* matches a known framework entry point pattern."""
     name = node.name
@@ -107,15 +110,14 @@ def _matches_framework_pattern(node: GraphNode) -> bool:
             if pattern in content:
                 return True
 
-    if language in ("typescript", "ts", "") or node.file_path.endswith(
-        (".ts", ".tsx")
-    ):
+    if language in ("typescript", "ts", "") or node.file_path.endswith((".ts", ".tsx")):
         if name in ("handler", "middleware"):
             return True
         if node.is_exported:
             return True
 
     return False
+
 
 def trace_flow(
     entry_point: GraphNode,
@@ -154,9 +156,7 @@ def trace_flow(
             continue
 
         outgoing = graph.get_outgoing(current_id, RelType.CALLS)
-        outgoing.sort(
-            key=lambda r: r.properties.get("confidence", 0.0), reverse=True
-        )
+        outgoing.sort(key=lambda r: r.properties.get("confidence", 0.0), reverse=True)
 
         count = 0
         for rel in outgoing:
@@ -175,6 +175,7 @@ def trace_flow(
             count += 1
 
     return result
+
 
 def generate_process_label(steps: list[GraphNode]) -> str:
     """Create a human-readable label from the flow steps.
@@ -196,6 +197,7 @@ def generate_process_label(steps: list[GraphNode]) -> str:
 
     names = [s.name for s in steps[:4]]
     return " \u2192 ".join(names)
+
 
 def deduplicate_flows(flows: list[list[GraphNode]]) -> list[list[GraphNode]]:
     """Remove flows that are too similar to longer ones.
@@ -234,6 +236,7 @@ def deduplicate_flows(flows: list[list[GraphNode]]) -> list[list[GraphNode]]:
 
     return kept
 
+
 def _determine_kind(steps: list[GraphNode], graph: KnowledgeGraph) -> str:
     """Determine whether a flow is intra- or cross-community.
 
@@ -255,6 +258,7 @@ def _determine_kind(steps: list[GraphNode], graph: KnowledgeGraph) -> str:
     if len(communities) <= 1:
         return "intra_community"
     return "cross_community"
+
 
 def process_processes(graph: KnowledgeGraph) -> int:
     """Detect execution flows and create Process nodes in the graph.

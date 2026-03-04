@@ -30,14 +30,12 @@ def tmp_repo(tmp_path: Path) -> Path:
     src.mkdir()
 
     (src / "app.py").write_text(
-        "def hello():\n"
-        "    return 'hello'\n",
+        "def hello():\n    return 'hello'\n",
         encoding="utf-8",
     )
 
     (src / "utils.py").write_text(
-        "def helper():\n"
-        "    pass\n",
+        "def helper():\n    pass\n",
         encoding="utf-8",
     )
 
@@ -100,9 +98,7 @@ class TestReadFileEntry:
 class TestReindexFiles:
     """reindex_files() correctly removes old nodes and adds new ones."""
 
-    def test_reindex_updates_content(
-        self, tmp_repo: Path, storage: KuzuBackend
-    ) -> None:
+    def test_reindex_updates_content(self, tmp_repo: Path, storage: KuzuBackend) -> None:
         # Initial full index.
         run_pipeline(tmp_repo, storage)
 
@@ -113,8 +109,7 @@ class TestReindexFiles:
 
         # Modify the file.
         (tmp_repo / "src" / "app.py").write_text(
-            "def hello():\n"
-            "    return 'goodbye'\n",
+            "def hello():\n    return 'goodbye'\n",
             encoding="utf-8",
         )
 
@@ -131,19 +126,13 @@ class TestReindexFiles:
         assert node is not None
         assert "goodbye" in node.content
 
-    def test_reindex_handles_new_symbols(
-        self, tmp_repo: Path, storage: KuzuBackend
-    ) -> None:
+    def test_reindex_handles_new_symbols(self, tmp_repo: Path, storage: KuzuBackend) -> None:
         # Initial full index.
         run_pipeline(tmp_repo, storage)
 
         # Add a new function to the file.
         (tmp_repo / "src" / "app.py").write_text(
-            "def hello():\n"
-            "    return 'hello'\n"
-            "\n"
-            "def world():\n"
-            "    return 'world'\n",
+            "def hello():\n    return 'hello'\n\ndef world():\n    return 'world'\n",
             encoding="utf-8",
         )
 
@@ -158,9 +147,7 @@ class TestReindexFiles:
         assert storage.get_node("function:src/app.py:hello") is not None
         assert storage.get_node("function:src/app.py:world") is not None
 
-    def test_reindex_removes_deleted_symbols(
-        self, tmp_repo: Path, storage: KuzuBackend
-    ) -> None:
+    def test_reindex_removes_deleted_symbols(self, tmp_repo: Path, storage: KuzuBackend) -> None:
         # Initial full index.
         run_pipeline(tmp_repo, storage)
         assert storage.get_node("function:src/app.py:hello") is not None
@@ -190,9 +177,7 @@ class TestReindexFiles:
 class TestWatcherReindexFiles:
     """_reindex_files filters and processes changed paths."""
 
-    def test_reindexes_changed_files(
-        self, tmp_repo: Path, storage: KuzuBackend
-    ) -> None:
+    def test_reindexes_changed_files(self, tmp_repo: Path, storage: KuzuBackend) -> None:
         run_pipeline(tmp_repo, storage)
 
         # Modify a file.
@@ -209,9 +194,7 @@ class TestWatcherReindexFiles:
         assert node is not None
         assert "updated" in node.content
 
-    def test_skips_ignored_files(
-        self, tmp_repo: Path, storage: KuzuBackend
-    ) -> None:
+    def test_skips_ignored_files(self, tmp_repo: Path, storage: KuzuBackend) -> None:
         run_pipeline(tmp_repo, storage)
 
         # Create a file in an ignored directory.
@@ -224,9 +207,7 @@ class TestWatcherReindexFiles:
 
         assert count == 0
 
-    def test_skips_unsupported_files(
-        self, tmp_repo: Path, storage: KuzuBackend
-    ) -> None:
+    def test_skips_unsupported_files(self, tmp_repo: Path, storage: KuzuBackend) -> None:
         run_pipeline(tmp_repo, storage)
 
         readme = tmp_repo / "README.md"
@@ -236,9 +217,7 @@ class TestWatcherReindexFiles:
 
         assert count == 0
 
-    def test_handles_deleted_files(
-        self, tmp_repo: Path, storage: KuzuBackend
-    ) -> None:
+    def test_handles_deleted_files(self, tmp_repo: Path, storage: KuzuBackend) -> None:
         run_pipeline(tmp_repo, storage)
 
         # File exists in storage but is now deleted from disk.
@@ -252,9 +231,7 @@ class TestWatcherReindexFiles:
         # Returns 0 because file no longer exists (was handled as deletion).
         assert count == 0
 
-    def test_handles_multiple_files(
-        self, tmp_repo: Path, storage: KuzuBackend
-    ) -> None:
+    def test_handles_multiple_files(self, tmp_repo: Path, storage: KuzuBackend) -> None:
         run_pipeline(tmp_repo, storage)
 
         # Modify both files.
@@ -319,9 +296,7 @@ class TestGetHeadSha:
 class TestReindexFilesReturnType:
     """_reindex_files returns (count, set_of_paths)."""
 
-    def test_returns_count_and_paths(
-        self, tmp_repo: Path, storage: KuzuBackend
-    ) -> None:
+    def test_returns_count_and_paths(self, tmp_repo: Path, storage: KuzuBackend) -> None:
         run_pipeline(tmp_repo, storage, full=True, embeddings=False)
 
         changed = [tmp_repo / "src" / "app.py"]
@@ -338,9 +313,7 @@ class TestReindexFilesReturnType:
 class TestComputeDirtyNodeIds:
     """_compute_dirty_node_ids finds nodes in dirty files + their CALLS neighbors."""
 
-    def test_includes_dirty_file_nodes(
-        self, tmp_repo: Path, storage: KuzuBackend
-    ) -> None:
+    def test_includes_dirty_file_nodes(self, tmp_repo: Path, storage: KuzuBackend) -> None:
         run_pipeline(tmp_repo, storage, full=True, embeddings=False)
 
         graph = storage.load_graph()
@@ -349,6 +322,7 @@ class TestComputeDirtyNodeIds:
 
     def test_returns_empty_for_empty_input(self, storage: KuzuBackend) -> None:
         from axon.core.graph.graph import KnowledgeGraph
+
         graph = KnowledgeGraph()
         result = _compute_dirty_node_ids(graph, set())
         assert result == set()
@@ -370,14 +344,20 @@ class TestRunIncrementalGlobalPhases:
 
         # First incremental run — should create communities.
         _run_incremental_global_phases(
-            storage, tmp_repo, dirty_files={"src/app.py"}, run_coupling=False,
+            storage,
+            tmp_repo,
+            dirty_files={"src/app.py"},
+            run_coupling=False,
         )
         graph1 = storage.load_graph()
         comm_count_1 = len(list(graph1.get_nodes_by_label(NodeLabel.COMMUNITY)))
 
         # Second incremental run — old communities should be deleted before new ones.
         _run_incremental_global_phases(
-            storage, tmp_repo, dirty_files={"src/app.py"}, run_coupling=False,
+            storage,
+            tmp_repo,
+            dirty_files={"src/app.py"},
+            run_coupling=False,
         )
         graph2 = storage.load_graph()
         comm_count_2 = len(list(graph2.get_nodes_by_label(NodeLabel.COMMUNITY)))

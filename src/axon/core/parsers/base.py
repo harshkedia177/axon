@@ -9,6 +9,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 
+
 @dataclass
 class SymbolInfo:
     """A parsed symbol (function, class, method, etc.)."""

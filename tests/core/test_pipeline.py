@@ -9,7 +9,6 @@ import pytest
 from axon.core.ingestion.pipeline import PipelineResult, run_pipeline
 from axon.core.storage.kuzu_backend import KuzuBackend
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

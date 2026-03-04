@@ -148,7 +148,6 @@ def diff_branches(
 
 def _build_graph_for_ref(repo_path: Path, ref: str) -> "KnowledgeGraph":
     """Build an in-memory graph for a git ref using a temporary worktree."""
-    from axon.core.graph.graph import KnowledgeGraph
     from axon.core.ingestion.pipeline import build_graph
 
     with tempfile.TemporaryDirectory(prefix="axon_diff_") as tmp_dir:

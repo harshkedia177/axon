@@ -12,11 +12,12 @@ IMPORTANT: All tests mock ``TextEmbedding`` to avoid slow model downloads.
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock, patch
+
 import numpy as np
 import pytest
-from unittest.mock import MagicMock, call, patch
 
-from axon.core.embeddings.embedder import embed_graph, embed_nodes, EMBEDDABLE_LABELS, _get_model
+from axon.core.embeddings.embedder import EMBEDDABLE_LABELS, _get_model, embed_graph, embed_nodes
 from axon.core.graph.graph import KnowledgeGraph
 from axon.core.graph.model import GraphNode, GraphRelationship, NodeLabel, RelType, generate_id
 from axon.core.storage.base import NodeEmbedding

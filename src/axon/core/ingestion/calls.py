@@ -22,7 +22,11 @@ from axon.core.graph.model import (
     generate_id,
 )
 from axon.core.ingestion.parser_phase import FileParseData
-from axon.core.ingestion.symbol_lookup import build_file_symbol_index, build_name_index, find_containing_symbol
+from axon.core.ingestion.symbol_lookup import (
+    build_file_symbol_index,
+    build_name_index,
+    find_containing_symbol,
+)
 from axon.core.parsers.base import CallInfo
 
 logger = logging.getLogger(__name__)

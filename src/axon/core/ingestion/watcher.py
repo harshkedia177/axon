@@ -126,11 +126,11 @@ def _run_incremental_global_phases(
     run_coupling: bool = False,
 ) -> None:
     """Run global phases incrementally using graph hydrated from storage."""
+    from axon.core.embeddings.embedder import embed_nodes
     from axon.core.ingestion.community import process_communities
     from axon.core.ingestion.coupling import process_coupling
     from axon.core.ingestion.dead_code import process_dead_code
     from axon.core.ingestion.processes import process_processes
-    from axon.core.embeddings.embedder import embed_nodes
 
     storage.delete_synthetic_nodes()
 

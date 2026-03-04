@@ -9,6 +9,7 @@ from pathlib import Path
 from axon.config.ignore import should_ignore
 from axon.config.languages import get_language, is_supported
 
+
 @dataclass
 class FileEntry:
     """A source file discovered during walking."""

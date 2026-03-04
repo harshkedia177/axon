@@ -14,6 +14,7 @@ from typing import Any, Protocol, runtime_checkable
 from axon.core.graph.graph import KnowledgeGraph
 from axon.core.graph.model import GraphNode, GraphRelationship, RelType
 
+
 @dataclass
 class SearchResult:
     """A single result from a full-text or vector search."""

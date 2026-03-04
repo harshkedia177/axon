@@ -19,7 +19,6 @@ from axon.core.ingestion.imports import (
 from axon.core.ingestion.parser_phase import FileParseData
 from axon.core.parsers.base import ImportInfo, ParseResult
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

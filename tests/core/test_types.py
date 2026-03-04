@@ -19,7 +19,6 @@ from axon.core.ingestion.types import process_types
 _TYPE_LABELS = (NodeLabel.CLASS, NodeLabel.INTERFACE, NodeLabel.TYPE_ALIAS)
 from axon.core.parsers.base import ParseResult, TypeRef
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

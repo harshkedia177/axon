@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+
 class NodeLabel(Enum):
     """Labels for graph nodes representing code-level entities."""
 

@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from axon.core.graph.model import GraphNode, NodeLabel, generate_id
-from axon.core.storage.base import NodeEmbedding, SearchResult
+from axon.core.storage.base import NodeEmbedding
 from axon.core.storage.kuzu_backend import KuzuBackend
 
 # ---------------------------------------------------------------------------

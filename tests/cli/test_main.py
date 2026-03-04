@@ -6,7 +6,6 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import typer
 from typer.testing import CliRunner
 
 from axon import __version__

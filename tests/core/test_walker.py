@@ -6,8 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from axon.core.ingestion.walker import FileEntry, discover_files, walk_repo
-
+from axon.core.ingestion.walker import discover_files, walk_repo
 
 # ---------------------------------------------------------------------------
 # Helpers

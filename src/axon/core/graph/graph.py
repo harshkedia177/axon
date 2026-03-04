@@ -13,6 +13,7 @@ from collections.abc import Iterator
 
 from axon.core.graph.model import GraphNode, GraphRelationship, NodeLabel, RelType
 
+
 class KnowledgeGraph:
     """An in-memory directed graph of code-level entities and their relationships.
 

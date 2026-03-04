@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from axon.core.graph.graph import KnowledgeGraph
-from axon.core.graph.model import NodeLabel, RelType, generate_id, GraphNode
+from axon.core.graph.model import GraphNode, NodeLabel, RelType, generate_id
 from axon.core.ingestion.parser_phase import (
     FileParseData,
     get_parser,
@@ -15,7 +15,6 @@ from axon.core.ingestion.parser_phase import (
 from axon.core.ingestion.walker import FileEntry
 from axon.core.parsers.python_lang import PythonParser
 from axon.core.parsers.typescript import TypeScriptParser
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

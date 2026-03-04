@@ -19,7 +19,7 @@ from axon.core.ingestion.calls import (
 )
 from axon.core.ingestion.parser_phase import FileParseData
 from axon.core.ingestion.symbol_lookup import build_name_index
-from axon.core.parsers.base import CallInfo, ParseResult, SymbolInfo
+from axon.core.parsers.base import CallInfo, ParseResult
 
 _CALLABLE_LABELS = (NodeLabel.FUNCTION, NodeLabel.METHOD, NodeLabel.CLASS)
 

@@ -403,7 +403,8 @@ def serve(
     import asyncio
     import sys
 
-    from axon.mcp.server import main as mcp_main, set_lock, set_storage
+    from axon.mcp.server import main as mcp_main
+    from axon.mcp.server import set_lock, set_storage
 
     if not watch:
         asyncio.run(mcp_main())
@@ -447,6 +448,7 @@ def serve(
 
     async def _run() -> None:
         from mcp.server.stdio import stdio_server
+
         from axon.mcp.server import server as mcp_server
 
         stop = asyncio.Event()

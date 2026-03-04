@@ -15,7 +15,6 @@ from axon.core.ingestion.pipeline import PipelineResult, run_pipeline
 from axon.core.storage.kuzu_backend import KuzuBackend
 from axon.mcp.tools import handle_context, handle_dead_code, handle_impact, handle_query
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

@@ -17,7 +17,11 @@ from axon.core.graph.model import (
     RelType,
 )
 from axon.core.ingestion.parser_phase import FileParseData
-from axon.core.ingestion.symbol_lookup import build_file_symbol_index, build_name_index, find_containing_symbol
+from axon.core.ingestion.symbol_lookup import (
+    build_file_symbol_index,
+    build_name_index,
+    find_containing_symbol,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +35,7 @@ _CONTAINER_LABELS: tuple[NodeLabel, ...] = (
     NodeLabel.FUNCTION,
     NodeLabel.METHOD,
 )
+
 
 def _resolve_type(
     type_name: str,
@@ -70,6 +75,7 @@ def _resolve_type(
     # 2. Global match -- return the first candidate.
     return candidate_ids[0]
 
+
 def process_types(
     parse_data: list[FileParseData],
     graph: KnowledgeGraph,
@@ -100,9 +106,7 @@ def process_types(
 
     for fpd in parse_data:
         for type_ref in fpd.parse_result.type_refs:
-            source_id = find_containing_symbol(
-                type_ref.line, fpd.file_path, file_sym_index
-            )
+            source_id = find_containing_symbol(type_ref.line, fpd.file_path, file_sym_index)
             if source_id is None:
                 logger.debug(
                     "No containing symbol for type ref %s at line %d in %s",
@@ -112,9 +116,7 @@ def process_types(
                 )
                 continue
 
-            target_id = _resolve_type(
-                type_ref.name, fpd.file_path, type_index, graph
-            )
+            target_id = _resolve_type(type_ref.name, fpd.file_path, type_index, graph)
             if target_id is None:
                 continue
 

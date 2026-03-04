@@ -12,11 +12,12 @@ IMPORTANT: All tests mock ``TextEmbedding`` to avoid slow model downloads.
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock, patch
+
 import numpy as np
 import pytest
-from unittest.mock import MagicMock, call, patch
 
-from axon.core.embeddings.embedder import embed_graph, embed_nodes, EMBEDDABLE_LABELS, _get_model
+from axon.core.embeddings.embedder import EMBEDDABLE_LABELS, _get_model, embed_graph, embed_nodes
 from axon.core.graph.graph import KnowledgeGraph
 from axon.core.graph.model import GraphNode, GraphRelationship, NodeLabel, RelType, generate_id
 from axon.core.storage.base import NodeEmbedding
@@ -156,12 +157,12 @@ class TestEmbedGraphBasic:
     """Core functionality of embed_graph."""
 
     @patch("fastembed.TextEmbedding")
-    def test_returns_node_embeddings(self, mock_te_cls: MagicMock, sample_graph: KnowledgeGraph) -> None:
+    def test_returns_node_embeddings(
+        self, mock_te_cls: MagicMock, sample_graph: KnowledgeGraph
+    ) -> None:
         """embed_graph returns a list of NodeEmbedding objects for embeddable nodes."""
         mock_model = MagicMock()
-        mock_model.embed.return_value = iter(
-            [np.array([0.1, 0.2, 0.3]), np.array([0.4, 0.5, 0.6])]
-        )
+        mock_model.embed.return_value = iter([np.array([0.1, 0.2, 0.3]), np.array([0.4, 0.5, 0.6])])
         mock_te_cls.return_value = mock_model
 
         results = embed_graph(sample_graph)
@@ -175,9 +176,7 @@ class TestEmbedGraphBasic:
     ) -> None:
         """Embedding vectors are plain Python lists, not numpy arrays."""
         mock_model = MagicMock()
-        mock_model.embed.return_value = iter(
-            [np.array([0.1, 0.2, 0.3]), np.array([0.4, 0.5, 0.6])]
-        )
+        mock_model.embed.return_value = iter([np.array([0.1, 0.2, 0.3]), np.array([0.4, 0.5, 0.6])])
         mock_te_cls.return_value = mock_model
 
         results = embed_graph(sample_graph)
@@ -192,9 +191,7 @@ class TestEmbedGraphBasic:
     ) -> None:
         """Embedding values from the model are correctly mapped to NodeEmbedding objects."""
         mock_model = MagicMock()
-        mock_model.embed.return_value = iter(
-            [np.array([0.1, 0.2, 0.3]), np.array([0.4, 0.5, 0.6])]
-        )
+        mock_model.embed.return_value = iter([np.array([0.1, 0.2, 0.3]), np.array([0.4, 0.5, 0.6])])
         mock_te_cls.return_value = mock_model
 
         results = embed_graph(sample_graph)
@@ -210,9 +207,7 @@ class TestEmbedGraphBasic:
     ) -> None:
         """NodeEmbedding objects carry the correct node IDs."""
         mock_model = MagicMock()
-        mock_model.embed.return_value = iter(
-            [np.array([0.1, 0.2, 0.3]), np.array([0.4, 0.5, 0.6])]
-        )
+        mock_model.embed.return_value = iter([np.array([0.1, 0.2, 0.3]), np.array([0.4, 0.5, 0.6])])
         mock_te_cls.return_value = mock_model
 
         results = embed_graph(sample_graph)
@@ -231,14 +226,10 @@ class TestEmbedGraphFiltering:
     """Filtering of non-embeddable nodes."""
 
     @patch("fastembed.TextEmbedding")
-    def test_skips_folder_nodes(
-        self, mock_te_cls: MagicMock, sample_graph: KnowledgeGraph
-    ) -> None:
+    def test_skips_folder_nodes(self, mock_te_cls: MagicMock, sample_graph: KnowledgeGraph) -> None:
         """Folder nodes are excluded from embedding."""
         mock_model = MagicMock()
-        mock_model.embed.return_value = iter(
-            [np.array([0.1, 0.2, 0.3]), np.array([0.4, 0.5, 0.6])]
-        )
+        mock_model.embed.return_value = iter([np.array([0.1, 0.2, 0.3]), np.array([0.4, 0.5, 0.6])])
         mock_te_cls.return_value = mock_model
 
         results = embed_graph(sample_graph)
@@ -318,12 +309,8 @@ class TestEmbedGraphEmpty:
         mock_te_cls.return_value = mock_model
 
         graph = KnowledgeGraph()
-        graph.add_node(
-            GraphNode(id="folder::src", label=NodeLabel.FOLDER, name="src")
-        )
-        graph.add_node(
-            GraphNode(id="community::auth", label=NodeLabel.COMMUNITY, name="auth")
-        )
+        graph.add_node(GraphNode(id="folder::src", label=NodeLabel.FOLDER, name="src"))
+        graph.add_node(GraphNode(id="community::auth", label=NodeLabel.COMMUNITY, name="auth"))
 
         results = embed_graph(graph)
 
@@ -342,9 +329,7 @@ class TestEmbedGraphModelConfig:
     def test_default_model_name(self, mock_te_cls: MagicMock, sample_graph: KnowledgeGraph) -> None:
         """Default model is BAAI/bge-small-en-v1.5."""
         mock_model = MagicMock()
-        mock_model.embed.return_value = iter(
-            [np.array([0.1, 0.2, 0.3]), np.array([0.4, 0.5, 0.6])]
-        )
+        mock_model.embed.return_value = iter([np.array([0.1, 0.2, 0.3]), np.array([0.4, 0.5, 0.6])])
         mock_te_cls.return_value = mock_model
 
         embed_graph(sample_graph)
@@ -355,9 +340,7 @@ class TestEmbedGraphModelConfig:
     def test_custom_model_name(self, mock_te_cls: MagicMock, sample_graph: KnowledgeGraph) -> None:
         """A custom model name is forwarded to TextEmbedding."""
         mock_model = MagicMock()
-        mock_model.embed.return_value = iter(
-            [np.array([0.1, 0.2, 0.3]), np.array([0.4, 0.5, 0.6])]
-        )
+        mock_model.embed.return_value = iter([np.array([0.1, 0.2, 0.3]), np.array([0.4, 0.5, 0.6])])
         mock_te_cls.return_value = mock_model
 
         embed_graph(sample_graph, model_name="BAAI/bge-base-en-v1.5")
@@ -370,9 +353,7 @@ class TestEmbedGraphModelConfig:
     ) -> None:
         """The batch_size parameter is forwarded to model.embed()."""
         mock_model = MagicMock()
-        mock_model.embed.return_value = iter(
-            [np.array([0.1, 0.2, 0.3]), np.array([0.4, 0.5, 0.6])]
-        )
+        mock_model.embed.return_value = iter([np.array([0.1, 0.2, 0.3]), np.array([0.4, 0.5, 0.6])])
         mock_te_cls.return_value = mock_model
 
         embed_graph(sample_graph, batch_size=32)
@@ -403,9 +384,7 @@ class TestEmbedGraphTextGeneration:
         """generate_text is called once per embeddable node."""
         mock_gen_text.return_value = "mock text"
         mock_model = MagicMock()
-        mock_model.embed.return_value = iter(
-            [np.array([0.1, 0.2, 0.3]), np.array([0.4, 0.5, 0.6])]
-        )
+        mock_model.embed.return_value = iter([np.array([0.1, 0.2, 0.3]), np.array([0.4, 0.5, 0.6])])
         mock_te_cls.return_value = mock_model
 
         embed_graph(sample_graph)
@@ -424,16 +403,18 @@ class TestEmbedGraphTextGeneration:
         """Texts from generate_text are forwarded to model.embed()."""
         mock_gen_text.side_effect = ["text for foo", "text for Bar"]
         mock_model = MagicMock()
-        mock_model.embed.return_value = iter(
-            [np.array([0.1, 0.2, 0.3]), np.array([0.4, 0.5, 0.6])]
-        )
+        mock_model.embed.return_value = iter([np.array([0.1, 0.2, 0.3]), np.array([0.4, 0.5, 0.6])])
         mock_te_cls.return_value = mock_model
 
         embed_graph(sample_graph)
 
         # The texts list passed to model.embed should contain both texts
         embed_call_args = mock_model.embed.call_args
-        texts_arg = embed_call_args.args[0] if embed_call_args.args else embed_call_args.kwargs.get("documents", [])
+        texts_arg = (
+            embed_call_args.args[0]
+            if embed_call_args.args
+            else embed_call_args.kwargs.get("documents", [])
+        )
         assert "text for foo" in texts_arg
         assert "text for Bar" in texts_arg
 
@@ -474,12 +455,12 @@ class TestEmbedGraphBatchProcessing:
         assert all(len(r.embedding) == 3 for r in results)
 
     @patch("fastembed.TextEmbedding")
-    def test_default_batch_size_is_64(self, mock_te_cls: MagicMock, sample_graph: KnowledgeGraph) -> None:
+    def test_default_batch_size_is_64(
+        self, mock_te_cls: MagicMock, sample_graph: KnowledgeGraph
+    ) -> None:
         """When batch_size is not specified, 64 is used by default."""
         mock_model = MagicMock()
-        mock_model.embed.return_value = iter(
-            [np.array([0.1, 0.2, 0.3]), np.array([0.4, 0.5, 0.6])]
-        )
+        mock_model.embed.return_value = iter([np.array([0.1, 0.2, 0.3]), np.array([0.4, 0.5, 0.6])])
         mock_te_cls.return_value = mock_model
 
         embed_graph(sample_graph)
@@ -500,20 +481,28 @@ def _make_incremental_graph() -> KnowledgeGraph:
     graph = KnowledgeGraph()
     fn_a = GraphNode(
         id=generate_id(NodeLabel.FUNCTION, "src/a.py", "func_a"),
-        label=NodeLabel.FUNCTION, name="func_a", file_path="src/a.py",
+        label=NodeLabel.FUNCTION,
+        name="func_a",
+        file_path="src/a.py",
         signature="def func_a():",
     )
     fn_b = GraphNode(
         id=generate_id(NodeLabel.FUNCTION, "src/b.py", "func_b"),
-        label=NodeLabel.FUNCTION, name="func_b", file_path="src/b.py",
+        label=NodeLabel.FUNCTION,
+        name="func_b",
+        file_path="src/b.py",
         signature="def func_b():",
     )
     graph.add_node(fn_a)
     graph.add_node(fn_b)
-    graph.add_relationship(GraphRelationship(
-        id=f"calls:{fn_a.id}->{fn_b.id}",
-        type=RelType.CALLS, source=fn_a.id, target=fn_b.id,
-    ))
+    graph.add_relationship(
+        GraphRelationship(
+            id=f"calls:{fn_a.id}->{fn_b.id}",
+            type=RelType.CALLS,
+            source=fn_a.id,
+            target=fn_b.id,
+        )
+    )
     return graph
 
 
@@ -547,7 +536,9 @@ class TestEmbedNodes:
         graph = KnowledgeGraph()
         folder = GraphNode(
             id=generate_id(NodeLabel.FOLDER, "src", "src"),
-            label=NodeLabel.FOLDER, name="src", file_path="src",
+            label=NodeLabel.FOLDER,
+            name="src",
+            file_path="src",
         )
         graph.add_node(folder)
         results = embed_nodes(graph, {folder.id})
@@ -569,9 +560,7 @@ class TestEmbedNodes:
         node_ids = {id_a, id_b}
 
         mock_model = MagicMock()
-        mock_model.embed.return_value = iter(
-            [np.array([0.1, 0.2, 0.3]), np.array([0.4, 0.5, 0.6])]
-        )
+        mock_model.embed.return_value = iter([np.array([0.1, 0.2, 0.3]), np.array([0.4, 0.5, 0.6])])
         mock_te_cls.return_value = mock_model
 
         results = embed_nodes(graph, node_ids)

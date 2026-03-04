@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
 
 from axon.core.search.hybrid import hybrid_search
 from axon.core.storage.base import SearchResult
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -20,15 +20,51 @@ def mock_storage() -> MagicMock:
     storage = MagicMock()
     # FTS returns results in ranked order
     storage.fts_search.return_value = [
-        SearchResult(node_id="a", score=1.0, node_name="validate_user", file_path="src/auth.py", label="function"),
-        SearchResult(node_id="b", score=0.8, node_name="validate_input", file_path="src/forms.py", label="function"),
-        SearchResult(node_id="c", score=0.5, node_name="check_valid", file_path="src/utils.py", label="function"),
+        SearchResult(
+            node_id="a",
+            score=1.0,
+            node_name="validate_user",
+            file_path="src/auth.py",
+            label="function",
+        ),
+        SearchResult(
+            node_id="b",
+            score=0.8,
+            node_name="validate_input",
+            file_path="src/forms.py",
+            label="function",
+        ),
+        SearchResult(
+            node_id="c",
+            score=0.5,
+            node_name="check_valid",
+            file_path="src/utils.py",
+            label="function",
+        ),
     ]
     # Vector returns results (some overlap with FTS)
     storage.vector_search.return_value = [
-        SearchResult(node_id="b", score=0.95, node_name="validate_input", file_path="src/forms.py", label="function"),
-        SearchResult(node_id="d", score=0.9, node_name="verify_user", file_path="src/verify.py", label="function"),
-        SearchResult(node_id="a", score=0.7, node_name="validate_user", file_path="src/auth.py", label="function"),
+        SearchResult(
+            node_id="b",
+            score=0.95,
+            node_name="validate_input",
+            file_path="src/forms.py",
+            label="function",
+        ),
+        SearchResult(
+            node_id="d",
+            score=0.9,
+            node_name="verify_user",
+            file_path="src/verify.py",
+            label="function",
+        ),
+        SearchResult(
+            node_id="a",
+            score=0.7,
+            node_name="validate_user",
+            file_path="src/auth.py",
+            label="function",
+        ),
     ]
     return storage
 
@@ -101,8 +137,12 @@ class TestRRFScoring:
         """Manually verify RRF computation for known ranks with default k=60."""
         k = 60
         results = hybrid_search(
-            "validate", mock_storage, query_embedding=[0.1],
-            fts_weight=1.0, vector_weight=1.0, rrf_k=k,
+            "validate",
+            mock_storage,
+            query_embedding=[0.1],
+            fts_weight=1.0,
+            vector_weight=1.0,
+            rrf_k=k,
         )
         score_map = {r.node_id: r.score for r in results}
 
@@ -126,14 +166,22 @@ class TestRRFScoring:
         """Adjusting fts_weight and vector_weight should change resulting scores."""
         k = 60
         results_fts_heavy = hybrid_search(
-            "validate", mock_storage, query_embedding=[0.1],
-            fts_weight=2.0, vector_weight=0.5, rrf_k=k,
+            "validate",
+            mock_storage,
+            query_embedding=[0.1],
+            fts_weight=2.0,
+            vector_weight=0.5,
+            rrf_k=k,
         )
         fts_heavy_scores = {r.node_id: r.score for r in results_fts_heavy}
 
         results_vec_heavy = hybrid_search(
-            "validate", mock_storage, query_embedding=[0.1],
-            fts_weight=0.5, vector_weight=2.0, rrf_k=k,
+            "validate",
+            mock_storage,
+            query_embedding=[0.1],
+            fts_weight=0.5,
+            vector_weight=2.0,
+            rrf_k=k,
         )
         vec_heavy_scores = {r.node_id: r.score for r in results_vec_heavy}
 
@@ -145,10 +193,16 @@ class TestRRFScoring:
     def test_custom_rrf_k(self, mock_storage: MagicMock) -> None:
         """Changing rrf_k should change the scores."""
         results_small_k = hybrid_search(
-            "validate", mock_storage, query_embedding=[0.1], rrf_k=1,
+            "validate",
+            mock_storage,
+            query_embedding=[0.1],
+            rrf_k=1,
         )
         results_large_k = hybrid_search(
-            "validate", mock_storage, query_embedding=[0.1], rrf_k=100,
+            "validate",
+            mock_storage,
+            query_embedding=[0.1],
+            rrf_k=100,
         )
         # With a smaller k, scores are larger (denominator smaller)
         small_k_top = results_small_k[0].score

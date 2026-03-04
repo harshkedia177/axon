@@ -11,6 +11,7 @@ from __future__ import annotations
 from axon.core.graph.graph import KnowledgeGraph
 from axon.core.graph.model import GraphNode, NodeLabel, RelType
 
+
 def build_class_method_index(graph: KnowledgeGraph) -> dict[str, list[str]]:
     """Pre-build a mapping from class names to their sorted method names.
 
@@ -23,6 +24,7 @@ def build_class_method_index(graph: KnowledgeGraph) -> dict[str, list[str]]:
     for names in index.values():
         names.sort()
     return index
+
 
 def generate_text(
     node: GraphNode,
@@ -64,6 +66,7 @@ def generate_text(
     # Fallback for any unexpected label — still produce something useful.
     return _header(node)
 
+
 def _text_for_callable(node: GraphNode, graph: KnowledgeGraph) -> str:
     """Build text for FUNCTION and METHOD nodes."""
     lines: list[str] = [_header(node)]
@@ -84,6 +87,7 @@ def _text_for_callable(node: GraphNode, graph: KnowledgeGraph) -> str:
         lines.append(f"uses types: {', '.join(type_names)}")
 
     return "\n".join(lines)
+
 
 def _text_for_class(
     node: GraphNode,
@@ -110,6 +114,7 @@ def _text_for_class(
 
     return "\n".join(lines)
 
+
 def _text_for_file(node: GraphNode, graph: KnowledgeGraph) -> str:
     """Build text for FILE nodes."""
     lines: list[str] = [_header(node)]
@@ -124,6 +129,7 @@ def _text_for_file(node: GraphNode, graph: KnowledgeGraph) -> str:
 
     return "\n".join(lines)
 
+
 def _text_for_folder(node: GraphNode, graph: KnowledgeGraph) -> str:
     """Build text for FOLDER nodes."""
     lines: list[str] = [_header(node)]
@@ -134,6 +140,7 @@ def _text_for_folder(node: GraphNode, graph: KnowledgeGraph) -> str:
 
     return "\n".join(lines)
 
+
 def _text_for_type_definition(node: GraphNode, _graph: KnowledgeGraph) -> str:
     """Build text for INTERFACE, TYPE_ALIAS, and ENUM nodes."""
     lines: list[str] = [_header(node)]
@@ -142,6 +149,7 @@ def _text_for_type_definition(node: GraphNode, _graph: KnowledgeGraph) -> str:
         lines.append(f"signature: {node.signature}")
 
     return "\n".join(lines)
+
 
 def _text_for_community(node: GraphNode, graph: KnowledgeGraph) -> str:
     """Build text for COMMUNITY nodes."""
@@ -153,6 +161,7 @@ def _text_for_community(node: GraphNode, graph: KnowledgeGraph) -> str:
 
     return "\n".join(lines)
 
+
 def _text_for_process(node: GraphNode, graph: KnowledgeGraph) -> str:
     """Build text for PROCESS nodes."""
     lines: list[str] = [_header(node)]
@@ -162,6 +171,7 @@ def _text_for_process(node: GraphNode, graph: KnowledgeGraph) -> str:
         lines.append(f"steps: {', '.join(step_names)}")
 
     return "\n".join(lines)
+
 
 def _header(node: GraphNode) -> str:
     """Build the opening line: ``<label> <name> in <file_path>``."""
@@ -175,9 +185,8 @@ def _header(node: GraphNode) -> str:
 
     return " ".join(parts)
 
-def _target_names(
-    node_id: str, rel_type: RelType, graph: KnowledgeGraph
-) -> list[str]:
+
+def _target_names(node_id: str, rel_type: RelType, graph: KnowledgeGraph) -> list[str]:
     """Return sorted names of target nodes for outgoing edges of *rel_type*."""
     rels = graph.get_outgoing(node_id, rel_type=rel_type)
     names: list[str] = []
@@ -187,9 +196,8 @@ def _target_names(
             names.append(target.name)
     return sorted(names)
 
-def _source_names(
-    node_id: str, rel_type: RelType, graph: KnowledgeGraph
-) -> list[str]:
+
+def _source_names(node_id: str, rel_type: RelType, graph: KnowledgeGraph) -> list[str]:
     """Return sorted names of source nodes for incoming edges of *rel_type*."""
     rels = graph.get_incoming(node_id, rel_type=rel_type)
     names: list[str] = []
@@ -198,6 +206,7 @@ def _source_names(
         if source is not None:
             names.append(source.name)
     return sorted(names)
+
 
 def _class_method_names(class_name: str, graph: KnowledgeGraph) -> list[str]:
     """Return sorted names of METHOD nodes whose ``class_name`` matches."""

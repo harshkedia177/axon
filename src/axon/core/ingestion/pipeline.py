@@ -26,9 +26,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from axon.config.ignore import load_gitignore
+from axon.core.embeddings.embedder import embed_graph
 from axon.core.graph.graph import KnowledgeGraph
 from axon.core.graph.model import GraphRelationship, NodeLabel
-from axon.core.embeddings.embedder import embed_graph
 from axon.core.ingestion.calls import process_calls
 from axon.core.ingestion.community import process_communities
 from axon.core.ingestion.coupling import process_coupling
@@ -41,6 +41,7 @@ from axon.core.ingestion.structure import process_structure
 from axon.core.ingestion.types import process_types
 from axon.core.ingestion.walker import FileEntry, walk_repo
 from axon.core.storage.base import StorageBackend
+
 
 @dataclass
 class PipelineResult:
@@ -58,12 +59,14 @@ class PipelineResult:
     incremental: bool = False
     changed_files: int = 0
 
+
 _SYMBOL_LABELS: frozenset[NodeLabel] = frozenset(NodeLabel) - {
     NodeLabel.FILE,
     NodeLabel.FOLDER,
     NodeLabel.COMMUNITY,
     NodeLabel.PROCESS,
 }
+
 
 def run_pipeline(
     repo_path: Path,
@@ -174,6 +177,7 @@ def run_pipeline(
                 report("Generating embeddings", 1.0)
             except Exception:
                 import logging as _logging
+
                 _logging.getLogger(__name__).warning(
                     "Embedding phase failed — search will use FTS only",
                     exc_info=True,
@@ -183,6 +187,7 @@ def run_pipeline(
     result.duration_seconds = time.monotonic() - start
 
     return graph, result
+
 
 def reindex_files(
     file_entries: list[FileEntry],
@@ -239,6 +244,7 @@ def reindex_files(
     storage.rebuild_fts_indexes()
 
     return graph
+
 
 def build_graph(repo_path: Path) -> KnowledgeGraph:
     """Run phases 1-11 and return the in-memory graph (no storage load).

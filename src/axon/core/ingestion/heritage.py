@@ -31,6 +31,7 @@ _KIND_TO_REL: dict[str, RelType] = {
 
 _PROTOCOL_MARKERS: frozenset[str] = frozenset({"Protocol", "ABC", "ABCMeta"})
 
+
 def _resolve_node(
     name: str,
     file_path: str,
@@ -56,6 +57,7 @@ def _resolve_node(
             return nid
 
     return candidate_ids[0]
+
 
 def process_heritage(
     parse_data: list[FileParseData],
@@ -89,12 +91,8 @@ def process_heritage(
                 )
                 continue
 
-            child_id = _resolve_node(
-                class_name, fpd.file_path, symbol_index, graph
-            )
-            parent_id = _resolve_node(
-                parent_name, fpd.file_path, symbol_index, graph
-            )
+            child_id = _resolve_node(class_name, fpd.file_path, symbol_index, graph)
+            parent_id = _resolve_node(parent_name, fpd.file_path, symbol_index, graph)
 
             if child_id is None:
                 logger.debug(

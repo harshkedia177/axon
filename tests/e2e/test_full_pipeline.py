@@ -15,7 +15,6 @@ from axon.core.ingestion.pipeline import PipelineResult, run_pipeline
 from axon.core.storage.kuzu_backend import KuzuBackend
 from axon.mcp.tools import handle_context, handle_dead_code, handle_impact, handle_query
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -62,22 +61,17 @@ def sample_repo(tmp_path: Path) -> Path:
     )
 
     (src / "check.py").write_text(
-        "from .verify import verify\n"
-        "\n"
-        "def check(obj) -> bool:\n"
-        "    return verify(obj)\n",
+        "from .verify import verify\n\ndef check(obj) -> bool:\n    return verify(obj)\n",
         encoding="utf-8",
     )
 
     (src / "verify.py").write_text(
-        "def verify(obj) -> bool:\n"
-        "    return obj is not None\n",
+        "def verify(obj) -> bool:\n    return obj is not None\n",
         encoding="utf-8",
     )
 
     (src / "unused.py").write_text(
-        "def orphan_func():\n"
-        "    pass\n",
+        "def orphan_func():\n    pass\n",
         encoding="utf-8",
     )
 
@@ -99,9 +93,7 @@ def sample_repo(tmp_path: Path) -> Path:
     )
 
     (lib / "process.ts").write_text(
-        "export function process(req: Request): Response {\n"
-        "    return new Response('ok');\n"
-        "}\n",
+        "export function process(req: Request): Response {\n    return new Response('ok');\n}\n",
         encoding="utf-8",
     )
 
@@ -119,9 +111,7 @@ def storage(tmp_path: Path) -> KuzuBackend:
 
 
 @pytest.fixture()
-def pipeline_result(
-    sample_repo: Path, storage: KuzuBackend
-) -> PipelineResult:
+def pipeline_result(sample_repo: Path, storage: KuzuBackend) -> PipelineResult:
     """Run the full pipeline once and return the result."""
     _, result = run_pipeline(sample_repo, storage)
     return result
@@ -171,9 +161,7 @@ class TestRelationshipTypes:
     ) -> None:
         # CONTAINS: folder -> file
         rows = storage.execute_raw(
-            "MATCH ()-[r:CodeRelation]->() "
-            "WHERE r.rel_type = 'contains' "
-            "RETURN count(r)"
+            "MATCH ()-[r:CodeRelation]->() WHERE r.rel_type = 'contains' RETURN count(r)"
         )
         assert rows[0][0] > 0
 
@@ -181,9 +169,7 @@ class TestRelationshipTypes:
         self, sample_repo: Path, storage: KuzuBackend, pipeline_result: PipelineResult
     ) -> None:
         rows = storage.execute_raw(
-            "MATCH ()-[r:CodeRelation]->() "
-            "WHERE r.rel_type = 'defines' "
-            "RETURN count(r)"
+            "MATCH ()-[r:CodeRelation]->() WHERE r.rel_type = 'defines' RETURN count(r)"
         )
         assert rows[0][0] > 0
 
@@ -191,9 +177,7 @@ class TestRelationshipTypes:
         self, sample_repo: Path, storage: KuzuBackend, pipeline_result: PipelineResult
     ) -> None:
         rows = storage.execute_raw(
-            "MATCH ()-[r:CodeRelation]->() "
-            "WHERE r.rel_type = 'imports' "
-            "RETURN count(r)"
+            "MATCH ()-[r:CodeRelation]->() WHERE r.rel_type = 'imports' RETURN count(r)"
         )
         assert rows[0][0] > 0
 
@@ -201,9 +185,7 @@ class TestRelationshipTypes:
         self, sample_repo: Path, storage: KuzuBackend, pipeline_result: PipelineResult
     ) -> None:
         rows = storage.execute_raw(
-            "MATCH ()-[r:CodeRelation]->() "
-            "WHERE r.rel_type = 'calls' "
-            "RETURN count(r)"
+            "MATCH ()-[r:CodeRelation]->() WHERE r.rel_type = 'calls' RETURN count(r)"
         )
         assert rows[0][0] > 0
 
@@ -333,9 +315,7 @@ class TestMCPDeadCode:
 class TestIdempotency:
     """Running the pipeline twice produces the same stats."""
 
-    def test_idempotent(
-        self, sample_repo: Path, storage: KuzuBackend
-    ) -> None:
+    def test_idempotent(self, sample_repo: Path, storage: KuzuBackend) -> None:
         _, result1 = run_pipeline(sample_repo, storage)
         _, result2 = run_pipeline(sample_repo, storage)
 

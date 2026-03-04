@@ -21,6 +21,7 @@ from axon.core.graph.model import (
 if TYPE_CHECKING:
     from axon.core.ingestion.walker import FileEntry
 
+
 def process_structure(files: list[FileEntry], graph: KnowledgeGraph) -> None:
     """Build File/Folder nodes and CONTAINS relationships from a list of files.
 

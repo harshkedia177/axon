@@ -13,6 +13,7 @@ from collections.abc import Iterator
 
 from axon.core.graph.model import GraphNode, GraphRelationship, NodeLabel, RelType
 
+
 class KnowledgeGraph:
     """An in-memory directed graph of code-level entities and their relationships.
 
@@ -96,9 +97,7 @@ class KnowledgeGraph:
         Returns:
             The number of nodes removed.
         """
-        ids_to_remove = [
-            nid for nid, node in self._nodes.items() if node.file_path == file_path
-        ]
+        ids_to_remove = [nid for nid, node in self._nodes.items() if node.file_path == file_path]
         if not ids_to_remove:
             return 0
 
@@ -171,4 +170,3 @@ class KnowledgeGraph:
             self._relationships.pop(rel.id, None)
             self._by_rel_type.get(rel.type, {}).pop(rel.id, None)
             self._outgoing.get(rel.source, {}).pop(rel.id, None)
-

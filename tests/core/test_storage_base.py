@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from axon.core.storage.base import NodeEmbedding, SearchResult, StorageBackend
 
-
 # ---------------------------------------------------------------------------
 # SearchResult
 # ---------------------------------------------------------------------------

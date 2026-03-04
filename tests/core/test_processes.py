@@ -20,7 +20,6 @@ from axon.core.ingestion.processes import (
     trace_flow,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -340,9 +339,7 @@ class TestDeduplicateFlows:
 class TestProcessProcessesCreatesNodes:
     """process_processes creates Process nodes in the graph."""
 
-    def test_process_processes_creates_nodes(
-        self, graph: KnowledgeGraph
-    ) -> None:
+    def test_process_processes_creates_nodes(self, graph: KnowledgeGraph) -> None:
         process_processes(graph)
 
         process_nodes = graph.get_nodes_by_label(NodeLabel.PROCESS)
@@ -362,9 +359,7 @@ class TestProcessProcessesCreatesNodes:
 class TestProcessProcessesCreatesSteps:
     """STEP_IN_PROCESS relationships are created with step numbers."""
 
-    def test_process_processes_creates_steps(
-        self, graph: KnowledgeGraph
-    ) -> None:
+    def test_process_processes_creates_steps(self, graph: KnowledgeGraph) -> None:
         process_processes(graph)
 
         step_rels = graph.get_relationships_by_type(RelType.STEP_IN_PROCESS)
@@ -379,9 +374,7 @@ class TestProcessProcessesCreatesSteps:
         process_nodes = graph.get_nodes_by_label(NodeLabel.PROCESS)
         for pn in process_nodes:
             incoming = graph.get_incoming(pn.id, RelType.STEP_IN_PROCESS)
-            step_numbers = sorted(
-                r.properties["step_number"] for r in incoming
-            )
+            step_numbers = sorted(r.properties["step_number"] for r in incoming)
             assert step_numbers[0] == 0
             assert step_numbers == list(range(len(step_numbers)))
 
@@ -394,9 +387,7 @@ class TestProcessProcessesCreatesSteps:
 class TestProcessProcessesReturnsCount:
     """process_processes returns the correct count of processes created."""
 
-    def test_process_processes_returns_count(
-        self, graph: KnowledgeGraph
-    ) -> None:
+    def test_process_processes_returns_count(self, graph: KnowledgeGraph) -> None:
         count = process_processes(graph)
 
         process_nodes = graph.get_nodes_by_label(NodeLabel.PROCESS)

@@ -35,6 +35,7 @@ _KIND_TO_LABEL: dict[str, NodeLabel] = {
     "enum": NodeLabel.ENUM,
 }
 
+
 @dataclass
 class FileParseData:
     """Parse results for a single file, kept for later phases."""
@@ -43,7 +44,9 @@ class FileParseData:
     language: str
     parse_result: ParseResult
 
+
 _PARSER_CACHE: dict[str, LanguageParser] = {}
+
 
 def get_parser(language: str) -> LanguageParser:
     """Return the appropriate tree-sitter parser for *language*.
@@ -81,12 +84,12 @@ def get_parser(language: str) -> LanguageParser:
 
     else:
         raise ValueError(
-            f"Unsupported language {language!r}. "
-            f"Expected one of: python, typescript, javascript"
+            f"Unsupported language {language!r}. Expected one of: python, typescript, javascript"
         )
 
     _PARSER_CACHE[language] = parser
     return parser
+
 
 def parse_file(file_path: str, content: str, language: str) -> FileParseData:
     """Parse a single file and return structured parse data.
@@ -111,6 +114,7 @@ def parse_file(file_path: str, content: str, language: str) -> FileParseData:
         result = ParseResult()
 
     return FileParseData(file_path=file_path, language=language, parse_result=result)
+
 
 def process_parsing(
     files: list[FileEntry],

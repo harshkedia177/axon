@@ -7,8 +7,7 @@ context (edges, neighbours, signatures, etc.).
 
 from __future__ import annotations
 
-import pytest
-
+from axon.core.embeddings.text import generate_text
 from axon.core.graph.graph import KnowledgeGraph
 from axon.core.graph.model import (
     GraphNode,
@@ -17,8 +16,6 @@ from axon.core.graph.model import (
     RelType,
     generate_id,
 )
-from axon.core.embeddings.text import generate_text
-
 
 # ---------------------------------------------------------------------------
 # Helpers

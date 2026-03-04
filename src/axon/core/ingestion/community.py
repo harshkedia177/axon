@@ -31,6 +31,7 @@ _CALLABLE_LABELS: tuple[NodeLabel, ...] = (
     NodeLabel.CLASS,
 )
 
+
 def export_to_igraph(
     graph: KnowledgeGraph,
 ) -> tuple[ig.Graph, dict[int, str]]:
@@ -69,6 +70,7 @@ def export_to_igraph(
     ig_graph.add_edges(edge_list)
 
     return ig_graph, index_to_node_id
+
 
 def generate_label(graph: KnowledgeGraph, member_ids: list[str]) -> str:
     """Generate a heuristic label for a community based on member file paths.
@@ -110,6 +112,7 @@ def generate_label(graph: KnowledgeGraph, member_ids: list[str]) -> str:
     label = f"{most_common[0][0]}+{most_common[1][0]}"
     return label.capitalize()
 
+
 def process_communities(
     graph: KnowledgeGraph,
     min_community_size: int = 2,
@@ -141,9 +144,7 @@ def process_communities(
         )
         return 0
 
-    partition = leidenalg.find_partition(
-        ig_graph, leidenalg.ModularityVertexPartition
-    )
+    partition = leidenalg.find_partition(ig_graph, leidenalg.ModularityVertexPartition)
     modularity_score = partition.modularity
 
     community_count = 0
@@ -187,7 +188,5 @@ def process_communities(
             modularity_score,
         )
 
-    logger.info(
-        "Community detection complete: %d communities created.", community_count
-    )
+    logger.info("Community detection complete: %d communities created.", community_count)
     return community_count

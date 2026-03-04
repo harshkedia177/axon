@@ -126,11 +126,11 @@ def _run_incremental_global_phases(
     run_coupling: bool = False,
 ) -> None:
     """Run global phases incrementally using graph hydrated from storage."""
+    from axon.core.embeddings.embedder import embed_nodes
     from axon.core.ingestion.community import process_communities
     from axon.core.ingestion.coupling import process_coupling
     from axon.core.ingestion.dead_code import process_dead_code
     from axon.core.ingestion.processes import process_processes
-    from axon.core.embeddings.embedder import embed_nodes
 
     storage.delete_synthetic_nodes()
 
@@ -145,13 +145,11 @@ def _run_incremental_global_phases(
     num_dead = process_dead_code(graph)
     logger.info("Dead code: %d", num_dead)
 
-    new_nodes = (
-        list(graph.get_nodes_by_label(NodeLabel.COMMUNITY))
-        + list(graph.get_nodes_by_label(NodeLabel.PROCESS))
+    new_nodes = list(graph.get_nodes_by_label(NodeLabel.COMMUNITY)) + list(
+        graph.get_nodes_by_label(NodeLabel.PROCESS)
     )
-    new_rels = (
-        list(graph.get_relationships_by_type(RelType.MEMBER_OF))
-        + list(graph.get_relationships_by_type(RelType.STEP_IN_PROCESS))
+    new_rels = list(graph.get_relationships_by_type(RelType.MEMBER_OF)) + list(
+        graph.get_relationships_by_type(RelType.STEP_IN_PROCESS)
     )
     if new_nodes:
         storage.add_nodes(new_nodes)
@@ -232,7 +230,11 @@ async def watch_repo(
 
         if changed_paths:
             count, reindexed = await _run_sync(
-                _reindex_files, changed_paths, repo_path, storage, gitignore,
+                _reindex_files,
+                changed_paths,
+                repo_path,
+                storage,
+                gitignore,
             )
             if reindexed:
                 dirty_files |= reindexed
@@ -245,11 +247,7 @@ async def watch_repo(
         now = time.monotonic()
         quiet_elapsed = last_change_time > 0 and (now - last_change_time) >= QUIET_PERIOD
         starvation = first_dirty_time > 0 and (now - first_dirty_time) >= MAX_DIRTY_AGE
-        if (
-            dirty_files
-            and not global_lock.locked()
-            and (quiet_elapsed or starvation)
-        ):
+        if dirty_files and not global_lock.locked() and (quiet_elapsed or starvation):
             snapshot = dirty_files.copy()
             dirty_files.clear()
             first_dirty_time = 0.0
@@ -264,7 +262,10 @@ async def watch_repo(
                     logger.info("Running incremental global phases...")
                     await _run_sync(
                         _run_incremental_global_phases,
-                        storage, repo_path, snapshot, run_coupling,
+                        storage,
+                        repo_path,
+                        snapshot,
+                        run_coupling,
                     )
             except Exception:
                 logger.exception("Global phases failed; re-queueing dirty files")

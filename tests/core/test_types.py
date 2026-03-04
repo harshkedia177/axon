@@ -15,10 +15,9 @@ from axon.core.graph.model import (
 from axon.core.ingestion.parser_phase import FileParseData
 from axon.core.ingestion.symbol_lookup import build_name_index
 from axon.core.ingestion.types import process_types
-
-_TYPE_LABELS = (NodeLabel.CLASS, NodeLabel.INTERFACE, NodeLabel.TYPE_ALIAS)
 from axon.core.parsers.base import ParseResult, TypeRef
 
+_TYPE_LABELS = (NodeLabel.CLASS, NodeLabel.INTERFACE, NodeLabel.TYPE_ALIAS)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -49,9 +48,7 @@ def _add_symbol_node(
     class_name: str = "",
 ) -> str:
     """Add a symbol node with a DEFINES relationship from the file node."""
-    symbol_name = (
-        f"{class_name}.{name}" if label == NodeLabel.METHOD and class_name else name
-    )
+    symbol_name = f"{class_name}.{name}" if label == NodeLabel.METHOD and class_name else name
     node_id = generate_id(label, file_path, symbol_name)
     graph.add_node(
         GraphNode(
@@ -160,9 +157,7 @@ class TestBuildTypeIndex:
         expected_user = generate_id(NodeLabel.CLASS, "src/models.py", "User")
         assert index["User"] == [expected_user]
 
-        expected_auth_result = generate_id(
-            NodeLabel.INTERFACE, "src/types.ts", "AuthResult"
-        )
+        expected_auth_result = generate_id(NodeLabel.INTERFACE, "src/types.ts", "AuthResult")
         assert index["AuthResult"] == [expected_auth_result]
 
         # Function nodes should NOT appear in the type index.
@@ -212,9 +207,7 @@ class TestProcessTypesCreatesUsesType:
         # Collect source->target pairs.
         pairs = {(r.source, r.target) for r in uses_rels}
 
-        validate_id = generate_id(
-            NodeLabel.FUNCTION, "src/auth.py", "validate"
-        )
+        validate_id = generate_id(NodeLabel.FUNCTION, "src/auth.py", "validate")
         user_id = generate_id(NodeLabel.CLASS, "src/models.py", "User")
         config_id = generate_id(NodeLabel.CLASS, "src/models.py", "Config")
 
@@ -252,9 +245,7 @@ class TestProcessTypesRoleProperty:
 class TestProcessTypesUnresolvedSkipped:
     """Unknown type names don't crash and produce no relationships."""
 
-    def test_process_types_unresolved_skipped(
-        self, graph: KnowledgeGraph
-    ) -> None:
+    def test_process_types_unresolved_skipped(self, graph: KnowledgeGraph) -> None:
         unresolved_data = [
             FileParseData(
                 file_path="src/auth.py",
@@ -286,9 +277,7 @@ class TestProcessTypesUnresolvedSkipped:
 class TestProcessTypesNoDuplicates:
     """Same type used twice in the same role doesn't duplicate edges."""
 
-    def test_process_types_no_duplicates(
-        self, graph: KnowledgeGraph
-    ) -> None:
+    def test_process_types_no_duplicates(self, graph: KnowledgeGraph) -> None:
         # Two param references to User inside validate (same role).
         duplicate_data = [
             FileParseData(
@@ -319,9 +308,7 @@ class TestProcessTypesNoDuplicates:
 class TestProcessTypesReturnType:
     """Return type annotation creates USES_TYPE with role='return'."""
 
-    def test_process_types_return_type(
-        self, graph: KnowledgeGraph
-    ) -> None:
+    def test_process_types_return_type(self, graph: KnowledgeGraph) -> None:
         return_data = [
             FileParseData(
                 file_path="src/auth.py",
@@ -340,9 +327,7 @@ class TestProcessTypesReturnType:
         assert len(uses_rels) == 1
 
         rel = uses_rels[0]
-        validate_id = generate_id(
-            NodeLabel.FUNCTION, "src/auth.py", "validate"
-        )
+        validate_id = generate_id(NodeLabel.FUNCTION, "src/auth.py", "validate")
         user_id = generate_id(NodeLabel.CLASS, "src/models.py", "User")
 
         assert rel.source == validate_id

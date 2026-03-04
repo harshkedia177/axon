@@ -14,6 +14,7 @@ from typing import Any, Protocol, runtime_checkable
 from axon.core.graph.graph import KnowledgeGraph
 from axon.core.graph.model import GraphNode, GraphRelationship, RelType
 
+
 @dataclass
 class SearchResult:
     """A single result from a full-text or vector search."""
@@ -25,12 +26,14 @@ class SearchResult:
     label: str = ""
     snippet: str = ""
 
+
 @dataclass
 class NodeEmbedding:
     """An embedding vector associated with a graph node."""
 
     node_id: str
     embedding: list[float] = field(default_factory=list)
+
 
 @runtime_checkable
 class StorageBackend(Protocol):
@@ -66,7 +69,9 @@ class StorageBackend(Protocol):
         ...
 
     def get_inbound_cross_file_edges(
-        self, file_path: str, exclude_source_files: set[str] | None = None,
+        self,
+        file_path: str,
+        exclude_source_files: set[str] | None = None,
     ) -> list[GraphRelationship]:
         """Return inbound edges where the target is in *file_path* and the source is not.
 
@@ -135,9 +140,7 @@ class StorageBackend(Protocol):
         """Full-text search across indexed node content."""
         ...
 
-    def fuzzy_search(
-        self, query: str, limit: int, max_distance: int = 2
-    ) -> list[SearchResult]:
+    def fuzzy_search(self, query: str, limit: int, max_distance: int = 2) -> list[SearchResult]:
         """Fuzzy name search by edit distance."""
         ...
 

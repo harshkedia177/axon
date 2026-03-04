@@ -9,6 +9,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 
+
 @dataclass
 class SymbolInfo:
     """A parsed symbol (function, class, method, etc.)."""
@@ -20,7 +21,10 @@ class SymbolInfo:
     content: str
     signature: str = ""
     class_name: str = ""  # for methods: the owning class
-    decorators: list[str] = field(default_factory=list)  # e.g. ["staticmethod", "server.list_tools"]
+    decorators: list[str] = field(
+        default_factory=list
+    )  # e.g. ["staticmethod", "server.list_tools"]
+
 
 @dataclass
 class ImportInfo:
@@ -31,6 +35,7 @@ class ImportInfo:
     is_relative: bool = False
     alias: str = ""
 
+
 @dataclass
 class CallInfo:
     """A parsed function call."""
@@ -40,6 +45,7 @@ class CallInfo:
     receiver: str = ""  # for method calls: the object (e.g., "self", "user")
     arguments: list[str] = field(default_factory=list)  # bare identifier arguments (callbacks)
 
+
 @dataclass
 class TypeRef:
     """A parsed type annotation reference."""
@@ -48,6 +54,7 @@ class TypeRef:
     kind: str  # "param", "return", "variable"
     line: int
     param_name: str = ""  # for param types: the parameter name
+
 
 @dataclass
 class ParseResult:
@@ -61,6 +68,7 @@ class ParseResult:
         default_factory=list
     )  # (class_name, kind, parent_name) where kind is "extends" or "implements"
     exports: list[str] = field(default_factory=list)  # names from __all__ or export statements
+
 
 class LanguageParser(ABC):
     """Base interface for language-specific parsers."""

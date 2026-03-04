@@ -11,7 +11,7 @@ import bisect
 from collections import defaultdict
 
 from axon.core.graph.graph import KnowledgeGraph
-from axon.core.graph.model import GraphNode, NodeLabel
+from axon.core.graph.model import NodeLabel
 
 
 def build_name_index(
@@ -58,6 +58,7 @@ class FileSymbolIndex:
     def get_start_lines(self, file_path: str) -> list[int] | None:
         return self._start_lines.get(file_path)
 
+
 def build_file_symbol_index(
     graph: KnowledgeGraph,
     labels: tuple[NodeLabel, ...],
@@ -81,9 +82,7 @@ def build_file_symbol_index(
         for node in graph.get_nodes_by_label(label):
             if node.file_path and node.start_line > 0:
                 span = node.end_line - node.start_line
-                entries[node.file_path].append(
-                    (node.start_line, node.end_line, span, node.id)
-                )
+                entries[node.file_path].append((node.start_line, node.end_line, span, node.id))
 
     for file_entries in entries.values():
         file_entries.sort(key=lambda t: t[0])
@@ -93,6 +92,7 @@ def build_file_symbol_index(
     }
 
     return FileSymbolIndex(entries, start_lines)
+
 
 def find_containing_symbol(
     line: int,

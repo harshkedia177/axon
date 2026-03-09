@@ -24,6 +24,7 @@ import logging
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -120,72 +121,84 @@ def run_pipeline(
     """
     start = time.monotonic()
     result = PipelineResult()
+    log = logging.getLogger(__name__)
+
+    phase_times: dict[str, float] = {}
 
     def report(phase: str, pct: float) -> None:
         if progress_callback is not None:
             progress_callback(phase, pct)
 
-    report("Walking files", 0.0)
-    gitignore = load_gitignore(repo_path)
-    files = walk_repo(repo_path, gitignore)
-    result.files = len(files)
-    report("Walking files", 1.0)
+    @contextmanager
+    def _timed(phase_name: str):
+        """Context manager that logs and records phase wall-clock time."""
+        report(phase_name, 0.0)
+        t0 = time.monotonic()
+        try:
+            yield
+        finally:
+            elapsed = time.monotonic() - t0
+            phase_times[phase_name] = elapsed
+            log.info("Phase %-30s  %.2fs", phase_name, elapsed)
+            report(phase_name, 1.0)
+
+    with _timed("Walking files"):
+        gitignore = load_gitignore(repo_path)
+        files = walk_repo(repo_path, gitignore)
+        result.files = len(files)
 
     graph = KnowledgeGraph()
 
-    report("Processing structure", 0.0)
-    process_structure(files, graph)
-    report("Processing structure", 1.0)
+    with _timed("Processing structure"):
+        process_structure(files, graph)
 
-    report("Parsing code", 0.0)
-    parse_data = process_parsing(files, graph)
-    report("Parsing code", 1.0)
+    with _timed("Parsing code"):
+        parse_data = process_parsing(files, graph)
 
-    report("Resolving imports", 0.0)
-    process_imports(parse_data, graph, parallel=True)
-    report("Resolving imports", 1.0)
+    with _timed("Resolving imports"):
+        process_imports(parse_data, graph, parallel=True)
 
-    shared_labels = (
-        NodeLabel.FUNCTION, NodeLabel.METHOD, NodeLabel.CLASS,
-        NodeLabel.INTERFACE, NodeLabel.TYPE_ALIAS,
-    )
-    shared_name_index = build_name_index(graph, shared_labels)
-    heritage_labels = {NodeLabel.CLASS, NodeLabel.INTERFACE}
-    heritage_name_index: dict[str, list[str]] = {}
-    for name, ids in shared_name_index.items():
-        filtered = [
-            nid for nid in ids
-            if (n := graph.get_node(nid)) is not None and n.label in heritage_labels
-        ]
-        if filtered:
-            heritage_name_index[name] = filtered
-
-    report("Resolving relationships", 0.0)
-    with ThreadPoolExecutor(max_workers=3) as pool:
-        calls_f = pool.submit(
-            process_calls, parse_data, graph,
-            name_index=shared_name_index, parallel=False, collect=True,
+    with _timed("Building indexes"):
+        shared_labels = (
+            NodeLabel.FUNCTION, NodeLabel.METHOD, NodeLabel.CLASS,
+            NodeLabel.INTERFACE, NodeLabel.TYPE_ALIAS,
         )
-        heritage_f = pool.submit(
-            process_heritage, parse_data, graph,
-            name_index=heritage_name_index, parallel=False, collect=True,
-        )
-        types_f = pool.submit(
-            process_types, parse_data, graph,
-            name_index=shared_name_index, parallel=False, collect=True,
-        )
+        shared_name_index = build_name_index(graph, shared_labels)
+        heritage_labels = {NodeLabel.CLASS, NodeLabel.INTERFACE}
+        heritage_name_index: dict[str, list[str]] = {}
+        for name, ids in shared_name_index.items():
+            filtered = [
+                nid for nid in ids
+                if (n := graph.get_node(nid)) is not None and n.label in heritage_labels
+            ]
+            if filtered:
+                heritage_name_index[name] = filtered
 
-    _write_collected_edges(calls_f.result() or [], graph)
+    with _timed("Resolving relationships"):
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            calls_f = pool.submit(
+                process_calls, parse_data, graph,
+                name_index=shared_name_index, parallel=False, collect=True,
+            )
+            heritage_f = pool.submit(
+                process_heritage, parse_data, graph,
+                name_index=heritage_name_index, parallel=False, collect=True,
+            )
+            types_f = pool.submit(
+                process_types, parse_data, graph,
+                name_index=shared_name_index, parallel=False, collect=True,
+            )
 
-    heritage_edges, heritage_patches = heritage_f.result()
-    _write_collected_edges(heritage_edges, graph)
-    for patch in heritage_patches:
-        node = graph.get_node(patch.node_id)
-        if node is not None:
-            node.properties[patch.key] = patch.value
+        _write_collected_edges(calls_f.result() or [], graph)
 
-    _write_collected_edges(types_f.result() or [], graph)
-    report("Resolving relationships", 1.0)
+        heritage_edges, heritage_patches = heritage_f.result()
+        _write_collected_edges(heritage_edges, graph)
+        for patch in heritage_patches:
+            node = graph.get_node(patch.node_id)
+            if node is not None:
+                node.properties[patch.key] = patch.value
+
+        _write_collected_edges(types_f.result() or [], graph)
 
     coupling_file_nodes = graph.get_nodes_by_label(NodeLabel.FILE)
 
@@ -194,47 +207,49 @@ def run_pipeline(
             resolve_coupling, graph, repo_path, file_nodes=coupling_file_nodes,
         )
 
-        report("Detecting communities", 0.0)
-        result.clusters = process_communities(graph)
-        report("Detecting communities", 1.0)
+        with _timed("Detecting communities"):
+            result.clusters = process_communities(graph)
 
-        report("Detecting execution flows", 0.0)
-        result.processes = process_processes(graph)
-        report("Detecting execution flows", 1.0)
+        with _timed("Detecting execution flows"):
+            result.processes = process_processes(graph)
 
-        report("Finding dead code", 0.0)
-        result.dead_code = process_dead_code(graph)
-        report("Finding dead code", 1.0)
+        with _timed("Finding dead code"):
+            result.dead_code = process_dead_code(graph)
 
-        report("Analyzing git history", 0.0)
-        coupling_edges = coupling_future.result()
-        _write_collected_edges(coupling_edges, graph)
-        result.coupled_pairs = len(coupling_edges)
-        report("Analyzing git history", 1.0)
+        with _timed("Analyzing git history"):
+            coupling_edges = coupling_future.result()
+            _write_collected_edges(coupling_edges, graph)
+            result.coupled_pairs = len(coupling_edges)
 
     result.symbols = sum(1 for n in graph.iter_nodes() if n.label in _SYMBOL_LABELS)
     result.relationships = graph.relationship_count
 
     if storage is not None:
-        report("Loading to storage", 0.0)
-        storage.bulk_load(graph)
-        report("Loading to storage", 1.0)
+        with _timed("Loading to storage"):
+            storage.bulk_load(graph)
 
         if embeddings:
             try:
-                report("Generating embeddings", 0.0)
-                node_embeddings = embed_graph(graph)
-                storage.store_embeddings(node_embeddings)
-                result.embeddings = len(node_embeddings)
-                report("Generating embeddings", 1.0)
+                with _timed("Generating embeddings"):
+                    node_embeddings = embed_graph(graph)
+                    storage.store_embeddings(node_embeddings)
+                    result.embeddings = len(node_embeddings)
             except Exception:
-                logging.getLogger(__name__).warning(
+                log.warning(
                     "Embedding phase failed — search will use FTS only",
                     exc_info=True,
                 )
                 report("Generating embeddings", 1.0)
 
     result.duration_seconds = time.monotonic() - start
+
+    # Log phase breakdown summary
+    if phase_times:
+        log.info("─── Phase timing breakdown ───")
+        for phase, elapsed in phase_times.items():
+            pct = (elapsed / result.duration_seconds * 100) if result.duration_seconds > 0 else 0
+            log.info("  %-30s %6.1fs  (%4.1f%%)", phase, elapsed, pct)
+        log.info("  %-30s %6.1fs", "TOTAL", result.duration_seconds)
 
     return graph, result
 

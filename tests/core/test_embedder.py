@@ -288,7 +288,7 @@ class TestEmbedGraphModelConfig:
 
         embed_graph(sample_graph)
 
-        mock_te_cls.assert_called_once_with(model_name="BAAI/bge-small-en-v1.5")
+        mock_te_cls.assert_called_once_with(model_name="BAAI/bge-small-en-v1.5", threads=0)
 
     @patch("fastembed.TextEmbedding")
     def test_custom_model_name(self, mock_te_cls: MagicMock, sample_graph: KnowledgeGraph) -> None:
@@ -300,7 +300,7 @@ class TestEmbedGraphModelConfig:
 
         embed_graph(sample_graph, model_name="BAAI/bge-base-en-v1.5")
 
-        mock_te_cls.assert_called_once_with(model_name="BAAI/bge-base-en-v1.5")
+        mock_te_cls.assert_called_once_with(model_name="BAAI/bge-base-en-v1.5", threads=0)
 
     @patch("fastembed.TextEmbedding")
     def test_custom_batch_size_passed_to_embed(
@@ -394,7 +394,7 @@ class TestEmbedGraphBatchProcessing:
         assert all(len(r.embedding) == 3 for r in results)
 
     @patch("fastembed.TextEmbedding")
-    def test_default_batch_size_is_64(self, mock_te_cls: MagicMock, sample_graph: KnowledgeGraph) -> None:
+    def test_default_batch_size_is_256(self, mock_te_cls: MagicMock, sample_graph: KnowledgeGraph) -> None:
         mock_model = MagicMock()
         mock_model.embed.return_value = iter(
             [np.array([0.1, 0.2, 0.3]), np.array([0.4, 0.5, 0.6])]
@@ -404,8 +404,8 @@ class TestEmbedGraphBatchProcessing:
         embed_graph(sample_graph)
 
         embed_call = mock_model.embed.call_args
-        assert embed_call.kwargs.get("batch_size") == 64 or (
-            len(embed_call.args) > 1 and embed_call.args[1] == 64
+        assert embed_call.kwargs.get("batch_size") == 256 or (
+            len(embed_call.args) > 1 and embed_call.args[1] == 256
         )
 
 

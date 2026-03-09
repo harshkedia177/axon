@@ -61,8 +61,7 @@ def _is_entry_point(node: GraphNode, graph: KnowledgeGraph) -> bool:
     if _matches_framework_pattern(node):
         return True
 
-    incoming_calls = graph.get_incoming(node.id, RelType.CALLS)
-    if incoming_calls:
+    if graph.has_incoming(node.id, RelType.CALLS):
         return False
 
     if node.is_exported:

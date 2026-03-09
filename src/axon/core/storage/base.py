@@ -26,12 +26,23 @@ class SearchResult:
     label: str = ""
     snippet: str = ""
 
+EMBEDDING_DIMENSIONS: int = 384
+"""Number of dimensions expected for all embedding vectors."""
+
+
 @dataclass
 class NodeEmbedding:
     """An embedding vector associated with a graph node."""
 
     node_id: str
     embedding: list[float] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        if self.embedding and len(self.embedding) != EMBEDDING_DIMENSIONS:
+            raise ValueError(
+                f"Expected embedding of {EMBEDDING_DIMENSIONS} dimensions, "
+                f"got {len(self.embedding)}"
+            )
 
 @runtime_checkable
 class StorageBackend(Protocol):

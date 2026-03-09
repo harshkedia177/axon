@@ -39,10 +39,10 @@ class TestNodeEmbedding:
         assert emb.embedding == []
 
     def test_creation_with_data(self) -> None:
-        vec = [0.1, 0.2, 0.3]
+        vec = [0.1] * 384
         emb = NodeEmbedding(node_id="n2", embedding=vec)
         assert emb.node_id == "n2"
-        assert emb.embedding == [0.1, 0.2, 0.3]
+        assert emb.embedding == [0.1] * 384
 
     def test_embedding_default_is_independent(self) -> None:
         a = NodeEmbedding(node_id="a")

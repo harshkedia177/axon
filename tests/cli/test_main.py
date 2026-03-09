@@ -288,7 +288,7 @@ class TestSetup:
         assert "Claude Code" in result.output
         assert "Cursor" in result.output
         assert '"axon"' in result.output
-        assert '"type": "http"' in result.output
+        assert '"serve"' in result.output
 
     def test_setup_claude_only(self) -> None:
         result = runner.invoke(app, ["setup", "--claude"])

@@ -402,11 +402,25 @@ def main(
     _maybe_notify_update(ctx.invoked_subcommand)
 
 
-def _initialize_writable_storage(repo_path: Path) -> tuple["KuzuBackend", Path, Path]:  # noqa: F821
-    """Open the repo database in read-write mode and ensure the initial index exists."""
+def _initialize_writable_storage(
+    repo_path: Path, *, auto_index: bool = True,
+) -> tuple["KuzuBackend", Path, Path]:  # noqa: F821
+    """Open the repo database in read-write mode.
+
+    If *auto_index* is False and no index exists, raises typer.Exit instead of
+    running the pipeline — callers like ``ui`` should tell the user to run
+    ``axon analyze .`` themselves.
+    """
     axon_dir = repo_path / ".axon"
-    axon_dir.mkdir(parents=True, exist_ok=True)
     db_path = axon_dir / "kuzu"
+
+    if not auto_index and not (axon_dir / "meta.json").exists():
+        console.print(
+            "[red]Error:[/red] No index found. Run [cyan]axon analyze .[/cyan] first to index this codebase."
+        )
+        raise typer.Exit(code=1)
+
+    axon_dir.mkdir(parents=True, exist_ok=True)
 
     storage = KuzuBackend()
     storage.initialize(db_path)
@@ -452,6 +466,7 @@ def _run_shared_host(
     announce_mcp: bool,
     expose_ui: bool,
     already_running_message: str,
+    auto_index: bool = True,
 ) -> None:
     """Run the shared Axon host with configurable UX messaging."""
     repo_path = Path.cwd().resolve()
@@ -462,7 +477,7 @@ def _run_shared_host(
             webbrowser.open(live_host["host_url"])
         return
 
-    storage, _, db_path = _initialize_writable_storage(repo_path)
+    storage, _, db_path = _initialize_writable_storage(repo_path, auto_index=auto_index)
     host_url, mcp_url = _build_host_urls(bind, port)
     lock = asyncio.Lock()
     runtime = AxonRuntime(
@@ -624,7 +639,7 @@ def status() -> None:
 
     if not meta_path.exists():
         console.print(
-            f"[red]Error:[/red] No index found at {repo_path}. Run 'axon analyze' first."
+            "[red]Error:[/red] No index found. Run [cyan]axon analyze .[/cyan] first to index this codebase."
         )
         raise typer.Exit(code=1)
 
@@ -732,31 +747,24 @@ def setup(
     cursor: bool = typer.Option(False, "--cursor", help="Configure MCP for Cursor."),
 ) -> None:
     """Configure MCP for Claude Code / Cursor."""
-    host_url, mcp_url = _build_host_urls(DEFAULT_HOST, DEFAULT_PORT)
-    hosted_claude_config = {
-        "type": "http",
-        "url": mcp_url,
-    }
-    hosted_cursor_config = {
-        "url": mcp_url,
-    }
-    legacy_stdio_config = {
+    stdio_config = {
         "command": "axon",
         "args": ["serve", "--watch"],
     }
 
     if claude or (not claude and not cursor):
         console.print("[bold]Claude Code[/bold]")
-        console.print(f"Recommended shared-host config (start with `axon host --watch` at {host_url}):")
-        console.print(json.dumps({"mcpServers": {"axon": hosted_claude_config}}, indent=2))
-        console.print("\n[dim]Legacy single-session stdio config:[/dim]")
-        console.print(json.dumps({"mcpServers": {"axon": legacy_stdio_config}}, indent=2))
+        console.print("Add to your [cyan].mcp.json[/cyan] or [cyan]~/.claude.json[/cyan]:\n")
+        console.print(json.dumps({"mcpServers": {"axon": stdio_config}}, indent=2))
+        console.print("\nOr run directly:")
+        console.print("[cyan]claude mcp add axon -- axon serve --watch[/cyan]")
 
     if cursor or (not claude and not cursor):
-        console.print("[bold]Add to your Cursor MCP config:[/bold]")
-        console.print(json.dumps({"axon": hosted_cursor_config}, indent=2))
-        console.print("\n[dim]Legacy single-session stdio config:[/dim]")
-        console.print(json.dumps({"axon": legacy_stdio_config}, indent=2))
+        console.print("[bold]Cursor[/bold]")
+        console.print("Add to your MCP config:\n")
+        console.print(json.dumps({"axon": stdio_config}, indent=2))
+
+    console.print("\n[dim]Then index your codebase with:[/dim] [cyan]axon analyze .[/cyan]")
 
 @app.command()
 def watch() -> None:
@@ -908,13 +916,14 @@ def ui(
             announce_mcp=False,
             expose_ui=True,
             already_running_message="[bold green]Axon UI[/bold green] available at {url}",
+            auto_index=False,
         )
         return
 
     db_path = repo_path / ".axon" / "kuzu"
     if not db_path.exists():
         console.print(
-            f"[red]Error:[/red] No index found at {repo_path}. Run 'axon analyze' first."
+            "[red]Error:[/red] No index found. Run [cyan]axon analyze .[/cyan] first to index this codebase."
         )
         raise typer.Exit(code=1)
 

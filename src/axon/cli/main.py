@@ -30,7 +30,9 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from axon import __version__
 from axon.core.diff import diff_branches, format_diff
+from axon.core.embeddings.embedder import _DEFAULT_MODEL
 from axon.core.ingestion.pipeline import PipelineResult, run_pipeline
+from axon.core.storage.base import EMBEDDING_DIMENSIONS
 from axon.core.ingestion.watcher import watch_repo
 from axon.core.storage.kuzu_backend import KuzuBackend
 from axon.mcp import tools as mcp_tools
@@ -178,6 +180,8 @@ def _build_meta(result: "PipelineResult", repo_path: Path) -> dict:  # noqa: F82
         "version": __version__,
         "name": repo_path.name,
         "path": str(repo_path),
+        "embedding_model": _DEFAULT_MODEL,
+        "embedding_dimensions": EMBEDDING_DIMENSIONS,
         "stats": {
             "files": result.files,
             "symbols": result.symbols,

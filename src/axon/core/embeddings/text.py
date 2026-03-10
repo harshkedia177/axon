@@ -11,6 +11,11 @@ from __future__ import annotations
 from axon.core.graph.graph import KnowledgeGraph
 from axon.core.graph.model import GraphNode, NodeLabel, RelType
 
+# nomic-embed-text-v1.5 supports 8192 tokens, but embedding quality degrades
+# with very long inputs.  2048 tokens (~8192 chars at ~4 chars/token) is the
+# sweet spot.
+_MAX_TEXT_TOKENS = 2048
+
 
 def build_class_method_index(graph: KnowledgeGraph) -> dict[tuple[str, str], list[str]]:
     """Pre-build a mapping from (class_name, file_path) to sorted method names.
@@ -51,22 +56,27 @@ def generate_text(
     label = node.label
 
     if label in (NodeLabel.FUNCTION, NodeLabel.METHOD):
-        return _text_for_callable(node, graph)
-    if label == NodeLabel.CLASS:
-        return _text_for_class(node, graph, class_method_index)
-    if label == NodeLabel.FILE:
-        return _text_for_file(node, graph)
-    if label == NodeLabel.FOLDER:
-        return _text_for_folder(node, graph)
-    if label in (NodeLabel.INTERFACE, NodeLabel.TYPE_ALIAS, NodeLabel.ENUM):
-        return _text_for_type_definition(node, graph)
-    if label == NodeLabel.COMMUNITY:
-        return _text_for_community(node, graph)
-    if label == NodeLabel.PROCESS:
-        return _text_for_process(node, graph)
+        text = _text_for_callable(node, graph)
+    elif label == NodeLabel.CLASS:
+        text = _text_for_class(node, graph, class_method_index)
+    elif label == NodeLabel.FILE:
+        text = _text_for_file(node, graph)
+    elif label == NodeLabel.FOLDER:
+        text = _text_for_folder(node, graph)
+    elif label in (NodeLabel.INTERFACE, NodeLabel.TYPE_ALIAS, NodeLabel.ENUM):
+        text = _text_for_type_definition(node, graph)
+    elif label == NodeLabel.COMMUNITY:
+        text = _text_for_community(node, graph)
+    elif label == NodeLabel.PROCESS:
+        text = _text_for_process(node, graph)
+    else:
+        text = _header(node)
 
-    # Fallback for any unexpected label — still produce something useful.
-    return _header(node)
+    # Enforce token budget — truncate if exceeding ~2048 tokens
+    max_chars = _MAX_TEXT_TOKENS * 4
+    if len(text) > max_chars:
+        text = text[:max_chars]
+    return text
 
 def _text_for_callable(node: GraphNode, graph: KnowledgeGraph) -> str:
     """Build text for FUNCTION and METHOD nodes."""

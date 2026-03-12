@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from pathlib import PurePosixPath
 
 from axon.core.graph.graph import KnowledgeGraph
 from axon.core.graph.model import GraphNode, NodeLabel, RelType
@@ -18,11 +17,13 @@ _SYMBOL_LABELS: tuple[NodeLabel, ...] = (
 
 _CONSTRUCTOR_NAMES: frozenset[str] = frozenset({"__init__", "__new__"})
 
+
 def _is_test_class(name: str) -> bool:
     return len(name) > 4 and name.startswith("Test") and name[4].isupper()
 
+
 def _is_test_file(file_path: str) -> bool:
-    parts = PurePosixPath(file_path).parts
+    parts = file_path.replace("\\", "/").split("/")
     return (
         "tests" in parts
         or "test" in parts
@@ -30,31 +31,55 @@ def _is_test_file(file_path: str) -> bool:
         or file_path.endswith("conftest.py")
     )
 
+
 def _is_dunder(name: str) -> bool:
     return name.startswith("__") and name.endswith("__") and len(name) > 4
 
+
 def _is_type_referenced(graph: KnowledgeGraph, node_id: str, label: NodeLabel) -> bool:
-    """Return True if node_id is a CLASS with incoming USES_TYPE edges."""
+    """Return True if node_id is a CLASS with incoming USES_TYPE or EXTENDS edges."""
     if label != NodeLabel.CLASS:
         return False
-    return graph.has_incoming(node_id, RelType.USES_TYPE)
+    return graph.has_incoming(node_id, RelType.USES_TYPE) or graph.has_incoming(
+        node_id, RelType.EXTENDS
+    )
 
-_NON_FRAMEWORK_DECORATORS: frozenset[str] = frozenset({
-    "functools.wraps",
-    "functools.lru_cache",
-    "functools.cached_property",
-    "functools.cache",
-})
 
-_FRAMEWORK_DECORATOR_NAMES: frozenset[str] = frozenset({
-    "task", "shared_task", "periodic_task", "job",
-    "receiver", "on_event", "handler",
-    "validator", "field_validator", "root_validator", "model_validator",
-    "contextmanager", "asynccontextmanager",
-    "fixture",
-    "route", "endpoint", "command",
-    "hybrid_property",
-})
+_NON_FRAMEWORK_DECORATORS: frozenset[str] = frozenset(
+    {
+        "functools.wraps",
+        "functools.lru_cache",
+        "functools.cached_property",
+        "functools.cache",
+    }
+)
+
+_FRAMEWORK_DECORATOR_NAMES: frozenset[str] = frozenset(
+    {
+        "task",
+        "shared_task",
+        "periodic_task",
+        "job",
+        "receiver",
+        "on_event",
+        "handler",
+        "validator",
+        "field_validator",
+        "root_validator",
+        "model_validator",
+        "computed_field",
+        "model_serializer",
+        "field_serializer",
+        "contextmanager",
+        "asynccontextmanager",
+        "fixture",
+        "route",
+        "endpoint",
+        "command",
+        "hybrid_property",
+    }
+)
+
 
 def _has_framework_decorator(node: GraphNode) -> bool:
     decorators: list[str] = node.properties.get("decorators", [])
@@ -63,22 +88,37 @@ def _has_framework_decorator(node: GraphNode) -> bool:
         for dec in decorators
     )
 
+
 def _has_property_decorator(node: GraphNode) -> bool:
     decorators: list[str] = node.properties.get("decorators", [])
     return "property" in decorators
 
-_TYPING_STUB_DECORATORS: frozenset[str] = frozenset({
-    "overload", "typing.overload",
-    "abstractmethod", "abc.abstractmethod",
-})
+
+_TYPING_STUB_DECORATORS: frozenset[str] = frozenset(
+    {
+        "overload",
+        "typing.overload",
+        "abstractmethod",
+        "abc.abstractmethod",
+    }
+)
+
 
 def _has_typing_stub_decorator(node: GraphNode) -> bool:
     decorators: list[str] = node.properties.get("decorators", [])
     return any(d in _TYPING_STUB_DECORATORS for d in decorators)
 
-_ENUM_BASES: frozenset[str] = frozenset({
-    "Enum", "IntEnum", "StrEnum", "Flag", "IntFlag",
-})
+
+_ENUM_BASES: frozenset[str] = frozenset(
+    {
+        "Enum",
+        "IntEnum",
+        "StrEnum",
+        "Flag",
+        "IntFlag",
+    }
+)
+
 
 def _is_enum_class(node: GraphNode, label: NodeLabel) -> bool:
     if label != NodeLabel.CLASS:
@@ -86,12 +126,18 @@ def _is_enum_class(node: GraphNode, label: NodeLabel) -> bool:
     bases: list[str] = node.properties.get("bases", [])
     return bool(_ENUM_BASES & set(bases))
 
+
+def _is_alembic_migration(file_path: str) -> bool:
+    """Return True if *file_path* looks like an Alembic migration file."""
+    parts = file_path.replace("\\", "/").split("/")
+    return "versions" in parts or "migrations" in parts
+
+
 def _is_python_public_api(name: str, file_path: str) -> bool:
     return file_path.endswith("__init__.py") and not name.startswith("_")
 
-def _is_exempt(
-    name: str, is_entry_point: bool, is_exported: bool, file_path: str = ""
-) -> bool:
+
+def _is_exempt(name: str, is_entry_point: bool, is_exported: bool, file_path: str = "") -> bool:
     return (
         is_entry_point
         or is_exported
@@ -101,7 +147,9 @@ def _is_exempt(
         or _is_test_file(file_path)
         or _is_dunder(name)
         or _is_python_public_api(name, file_path)
+        or (name in ("upgrade", "downgrade") and _is_alembic_migration(file_path))
     )
+
 
 def _clear_override_false_positives(graph: KnowledgeGraph) -> int:
     """Un-flag methods that override a non-dead base class method."""
@@ -132,6 +180,7 @@ def _clear_override_false_positives(graph: KnowledgeGraph) -> int:
                 break
 
     return cleared
+
 
 def _clear_protocol_conformance_false_positives(graph: KnowledgeGraph) -> int:
     """Un-flag methods on classes that structurally conform to a Protocol."""
@@ -179,6 +228,7 @@ def _clear_protocol_conformance_false_positives(graph: KnowledgeGraph) -> int:
 
     return cleared
 
+
 def _clear_protocol_stub_false_positives(graph: KnowledgeGraph) -> int:
     """Un-flag methods on Protocol classes (stubs are never called directly)."""
     protocol_class_names: set[str] = set()
@@ -199,6 +249,7 @@ def _clear_protocol_stub_false_positives(graph: KnowledgeGraph) -> int:
             logger.debug("Un-flagged protocol stub: %s.%s", method.class_name, method.name)
 
     return cleared
+
 
 def process_dead_code(graph: KnowledgeGraph) -> int:
     """Detect dead (unreachable) symbols and flag them in the graph.

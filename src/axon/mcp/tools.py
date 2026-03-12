@@ -17,7 +17,7 @@ from typing import Any
 from axon.core.cypher_guard import WRITE_KEYWORDS, sanitize_cypher
 from axon.core.embeddings.embedder import embed_query
 from axon.core.ingestion.community import export_to_igraph
-from axon.core.ingestion.dead_code import _is_test_file
+from axon.core.ingestion.path_utils import is_test_file
 from axon.core.search.hybrid import hybrid_search
 from axon.core.storage.base import StorageBackend
 from axon.core.storage.kuzu_backend import escape_cypher as _escape_cypher
@@ -1106,7 +1106,7 @@ def handle_test_impact(
 
     for sym_id, sym_name in changed_symbol_ids:
         for caller, depth in storage.traverse_with_depth(sym_id, 4, direction="callers"):
-            if _is_test_file(caller.file_path):
+            if is_test_file(caller.file_path):
                 test_hits.setdefault(caller.file_path, []).append(
                     (caller.name, sym_name, depth)
                 )

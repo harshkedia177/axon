@@ -4,6 +4,12 @@
 
 # Axon
 
+[![PyPI version](https://img.shields.io/pypi/v/axoniq)](https://pypi.org/project/axoniq/)
+[![PyPI downloads](https://static.pepy.tech/badge/axoniq/month)](https://pepy.tech/projects/axoniq)
+[![Total installs](https://static.pepy.tech/badge/axoniq)](https://pepy.tech/projects/axoniq)
+[![GitHub stars](https://img.shields.io/github/stars/harshkedia177/axon?style=social)](https://github.com/harshkedia177/axon)
+[![License](https://img.shields.io/pypi/l/axoniq)](https://github.com/harshkedia177/axon/blob/main/LICENSE)
+
 **The knowledge graph for your codebase — explore it visually, or let your AI agent query it.**
 
 Indexes any codebase into a structural knowledge graph — every dependency, call chain, cluster, and execution flow. Explore it through an **interactive web dashboard** with force-directed graph visualization, or expose it through **MCP tools** so AI agents get full structural understanding in every tool call.

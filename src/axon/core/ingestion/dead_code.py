@@ -6,6 +6,7 @@ import logging
 
 from axon.core.graph.graph import KnowledgeGraph
 from axon.core.graph.model import GraphNode, NodeLabel, RelType
+from axon.core.ingestion.path_utils import is_alembic_migration, is_test_file
 
 logger = logging.getLogger(__name__)
 
@@ -21,15 +22,6 @@ _CONSTRUCTOR_NAMES: frozenset[str] = frozenset({"__init__", "__new__"})
 def _is_test_class(name: str) -> bool:
     return len(name) > 4 and name.startswith("Test") and name[4].isupper()
 
-
-def _is_test_file(file_path: str) -> bool:
-    parts = file_path.replace("\\", "/").split("/")
-    return (
-        "tests" in parts
-        or "test" in parts
-        or any(p.startswith("test_") for p in parts)
-        or file_path.endswith("conftest.py")
-    )
 
 
 def _is_dunder(name: str) -> bool:
@@ -127,11 +119,6 @@ def _is_enum_class(node: GraphNode, label: NodeLabel) -> bool:
     return bool(_ENUM_BASES & set(bases))
 
 
-def _is_alembic_migration(file_path: str) -> bool:
-    """Return True if *file_path* looks like an Alembic migration file."""
-    parts = file_path.replace("\\", "/").split("/")
-    return "versions" in parts or "migrations" in parts
-
 
 def _is_python_public_api(name: str, file_path: str) -> bool:
     return file_path.endswith("__init__.py") and not name.startswith("_")
@@ -144,10 +131,10 @@ def _is_exempt(name: str, is_entry_point: bool, is_exported: bool, file_path: st
         or name in _CONSTRUCTOR_NAMES
         or name.startswith("test_")
         or _is_test_class(name)
-        or _is_test_file(file_path)
+        or is_test_file(file_path)
         or _is_dunder(name)
         or _is_python_public_api(name, file_path)
-        or (name in ("upgrade", "downgrade") and _is_alembic_migration(file_path))
+        or (name in ("upgrade", "downgrade") and is_alembic_migration(file_path))
     )
 
 

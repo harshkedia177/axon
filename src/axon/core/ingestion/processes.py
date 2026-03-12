@@ -13,6 +13,7 @@ from axon.core.graph.model import (
     RelType,
     generate_id,
 )
+from axon.core.ingestion.path_utils import is_alembic_migration
 
 logger = logging.getLogger(__name__)
 
@@ -73,11 +74,6 @@ def _is_ts_entry_file(file_path: str) -> bool:
     return any(file_path.endswith(suffix) for suffix in _TS_ENTRY_SUFFIXES)
 
 
-def _is_alembic_migration(file_path: str) -> bool:
-    """Return True if *file_path* looks like an Alembic migration file."""
-    parts = file_path.replace("\\", "/").split("/")
-    return "versions" in parts or "migrations" in parts
-
 
 def find_entry_points(graph: KnowledgeGraph) -> list[GraphNode]:
     """Find functions/methods that serve as execution entry points."""
@@ -124,7 +120,7 @@ def _matches_framework_pattern(node: GraphNode) -> bool:
             return True
         if name == "main":
             return True
-        if name in ("upgrade", "downgrade") and _is_alembic_migration(node.file_path):
+        if name in ("upgrade", "downgrade") and is_alembic_migration(node.file_path):
             return True
         for pattern in _PYTHON_DECORATOR_PATTERNS:
             if pattern in content:

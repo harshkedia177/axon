@@ -368,8 +368,8 @@ class TestDeleteSyntheticNodes:
 
 class TestUpsertEmbeddings:
     def test_upserts_without_wiping(self, backend: KuzuBackend) -> None:
-        emb_a = NodeEmbedding(node_id="function:src/a.py:alpha", embedding=[1.0, 2.0])
-        emb_b = NodeEmbedding(node_id="function:src/a.py:beta", embedding=[3.0, 4.0])
+        emb_a = NodeEmbedding(node_id="function:src/a.py:alpha", embedding=[1.0] * 384)
+        emb_b = NodeEmbedding(node_id="function:src/a.py:beta", embedding=[3.0] * 384)
 
         backend.store_embeddings([emb_a])
         backend.upsert_embeddings([emb_b])
@@ -382,11 +382,12 @@ class TestUpsertEmbeddings:
         assert "function:src/a.py:beta" in node_ids
 
     def test_updates_existing_embedding(self, backend: KuzuBackend) -> None:
-        emb = NodeEmbedding(node_id="function:src/a.py:alpha", embedding=[1.0, 2.0])
+        emb = NodeEmbedding(node_id="function:src/a.py:alpha", embedding=[1.0] * 384)
         backend.store_embeddings([emb])
 
+        updated_vec = [9.0] + [0.0] * 383
         updated = NodeEmbedding(
-            node_id="function:src/a.py:alpha", embedding=[9.0, 8.0]
+            node_id="function:src/a.py:alpha", embedding=updated_vec
         )
         backend.upsert_embeddings([updated])
 
@@ -396,7 +397,7 @@ class TestUpsertEmbeddings:
         )
         assert len(rows) == 1
         assert rows[0][0][0] == 9.0
-        assert rows[0][0][1] == 8.0
+        assert rows[0][0][1] == 0.0
 
 
 class TestUpdateDeadFlags:

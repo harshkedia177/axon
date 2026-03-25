@@ -90,4 +90,5 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 markers = [
     "allow_update_notice: run CLI tests with the real update notifier enabled",
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
 ]

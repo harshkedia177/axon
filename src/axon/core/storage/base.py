@@ -26,7 +26,10 @@ class SearchResult:
     label: str = ""
     snippet: str = ""
 
-EMBEDDING_DIMENSIONS = 384
+EMBEDDING_DIMENSIONS: int = 384
+"""Number of dimensions expected for all embedding vectors."""
+
+
 
 @dataclass
 class NodeEmbedding:
@@ -38,7 +41,8 @@ class NodeEmbedding:
     def __post_init__(self) -> None:
         if self.embedding and len(self.embedding) != EMBEDDING_DIMENSIONS:
             raise ValueError(
-                f"Expected {EMBEDDING_DIMENSIONS}d embedding, got {len(self.embedding)}d"
+                f"Expected embedding of {EMBEDDING_DIMENSIONS} dimensions, "
+                f"got {len(self.embedding)}"
             )
 
 @runtime_checkable

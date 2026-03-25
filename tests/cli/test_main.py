@@ -4,11 +4,12 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+from click.exceptions import Exit
 import pytest
 from typer.testing import CliRunner
 
 from axon import __version__
-from axon.cli.main import _register_in_global_registry, app
+from axon.cli.main import _initialize_writable_storage, _register_in_global_registry, app
 
 runner = CliRunner()
 
@@ -375,16 +376,50 @@ class TestUi:
 
     def test_ui_direct_skips_host_attach(self, tmp_path: Path, monkeypatch: "pytest.MonkeyPatch") -> None:
         monkeypatch.chdir(tmp_path)
-        axon_dir = tmp_path / ".axon" / "kuzu"
-        axon_dir.mkdir(parents=True)
+        mock_storage = MagicMock()
         with patch("axon.cli.main._get_live_host_info") as mock_host_info:
-            with patch("axon.web.app.create_app") as mock_create_app:
-                with patch("uvicorn.run") as mock_run:
-                    result = runner.invoke(app, ["ui", "--direct", "--no-open"])
+            with patch(
+                "axon.cli.main._initialize_writable_storage",
+                return_value=(mock_storage, tmp_path / ".axon", tmp_path / ".axon" / "kuzu"),
+            ):
+                with patch("axon.web.app.create_app") as mock_create_app:
+                    with patch("uvicorn.run") as mock_run:
+                        result = runner.invoke(app, ["ui", "--direct", "--no-open"])
         assert result.exit_code == 0
         mock_host_info.assert_not_called()
         mock_create_app.assert_called_once()
         mock_run.assert_called_once()
+
+
+class TestWritableStorageInitialization:
+    def test_requires_database_when_auto_index_disabled(self, tmp_path: Path) -> None:
+        axon_dir = tmp_path / ".axon"
+        axon_dir.mkdir()
+        (axon_dir / "meta.json").write_text("{}", encoding="utf-8")
+
+        with pytest.raises(Exit):
+            _initialize_writable_storage(tmp_path, auto_index=False)
+
+    def test_runs_embedding_migration_for_existing_index(self, tmp_path: Path) -> None:
+        axon_dir = tmp_path / ".axon"
+        db_path = axon_dir / "kuzu"
+        db_path.mkdir(parents=True)
+        (db_path / "data.kz").write_text("", encoding="utf-8")
+        (axon_dir / "meta.json").write_text("{}", encoding="utf-8")
+
+        mock_storage = MagicMock()
+        with patch("axon.cli.main.KuzuBackend", return_value=mock_storage):
+            with patch("axon.cli.main.ensure_current_embeddings") as mock_migrate:
+                storage, returned_axon_dir, returned_db_path = _initialize_writable_storage(
+                    tmp_path,
+                    auto_index=False,
+                )
+
+        assert storage is mock_storage
+        assert returned_axon_dir == axon_dir
+        assert returned_db_path == db_path
+        mock_storage.initialize.assert_called_once_with(db_path)
+        mock_migrate.assert_called_once_with(mock_storage, tmp_path)
 
 
 class TestWatch:

@@ -88,6 +88,26 @@ def _write_collected_edges(
         )
 
 
+def _run_embedding_phase(
+    graph: KnowledgeGraph,
+    storage: StorageBackend,
+    result: PipelineResult,
+    report: Callable[[str, float], None],
+) -> None:
+    """Generate and store embeddings synchronously."""
+    try:
+        node_embeddings = embed_graph(graph)
+        storage.store_embeddings(node_embeddings)
+        result.embeddings = len(node_embeddings)
+        report("Generating embeddings", 1.0)
+    except Exception:
+        logging.getLogger(__name__).warning(
+            "Embedding phase failed — search will use FTS only",
+            exc_info=True,
+        )
+        report("Generating embeddings", 1.0)
+
+
 def run_pipeline(
     repo_path: Path,
     storage: StorageBackend | None = None,
@@ -229,17 +249,8 @@ def run_pipeline(
             storage.bulk_load(graph)
 
         if embeddings:
-            try:
-                with _timed("Generating embeddings"):
-                    node_embeddings = embed_graph(graph)
-                    storage.store_embeddings(node_embeddings)
-                    result.embeddings = len(node_embeddings)
-            except Exception:
-                log.warning(
-                    "Embedding phase failed — search will use FTS only",
-                    exc_info=True,
-                )
-                report("Generating embeddings", 1.0)
+            report("Generating embeddings", 0.0)
+            _run_embedding_phase(graph, storage, result, report)
 
     result.duration_seconds = time.monotonic() - start
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from axon.core.embeddings.text import generate_text
+from axon.core.embeddings.text import generate_text, build_class_method_index, _MAX_TEXT_TOKENS
 from axon.core.graph.graph import KnowledgeGraph
 from axon.core.graph.model import (
     GraphNode,
@@ -369,3 +369,55 @@ class TestEdgeCases:
         assert "Worker" in text
         assert "transform" in text
         assert "Data" in text
+
+
+def _make_hub_function(num_callees: int = 100) -> tuple[KnowledgeGraph, GraphNode]:
+    """Create a function node that calls many other functions."""
+    graph = KnowledgeGraph()
+    hub = GraphNode(
+        id="function:src/hub.py:hub_func",
+        label=NodeLabel.FUNCTION,
+        name="hub_func",
+        file_path="src/hub.py",
+        signature="def hub_func(a, b, c, d, e):",
+    )
+    graph.add_node(hub)
+    for i in range(num_callees):
+        callee = GraphNode(
+            id=f"function:src/mod{i}.py:callee_{i}",
+            label=NodeLabel.FUNCTION,
+            name=f"callee_with_a_long_name_{i}",
+            file_path=f"src/mod{i}.py",
+        )
+        graph.add_node(callee)
+        graph.add_relationship(GraphRelationship(
+            id=f"calls:{hub.id}->{callee.id}",
+            type=RelType.CALLS,
+            source=hub.id,
+            target=callee.id,
+        ))
+    return graph, hub
+
+
+class TestTextBudget:
+    def test_hub_function_stays_within_budget(self) -> None:
+        graph, hub = _make_hub_function(num_callees=200)
+        idx = build_class_method_index(graph)
+        text = generate_text(hub, graph, idx)
+        max_chars = _MAX_TEXT_TOKENS * 4
+        assert len(text) <= max_chars, f"Text is {len(text)} chars, budget is {max_chars}"
+
+    def test_small_function_is_not_truncated(self) -> None:
+        graph = KnowledgeGraph()
+        fn = GraphNode(
+            id="function:src/a.py:small",
+            label=NodeLabel.FUNCTION,
+            name="small",
+            file_path="src/a.py",
+            signature="def small():",
+        )
+        graph.add_node(fn)
+        idx = build_class_method_index(graph)
+        text = generate_text(fn, graph, idx)
+        assert "small" in text
+        assert "signature:" in text

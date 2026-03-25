@@ -30,8 +30,10 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from axon import __version__
 from axon.core.diff import diff_branches, format_diff
+from axon.core.embeddings.embedder import _DEFAULT_MODEL
 from axon.core.ingestion.pipeline import PipelineResult, run_pipeline
-from axon.core.ingestion.watcher import watch_repo
+from axon.core.storage.base import EMBEDDING_DIMENSIONS
+from axon.core.ingestion.watcher import ensure_current_embeddings, watch_repo
 from axon.core.storage.kuzu_backend import KuzuBackend
 from axon.mcp import tools as mcp_tools
 from axon.mcp.server import main as mcp_main
@@ -60,6 +62,18 @@ def _load_storage(repo_path: Path | None = None) -> "KuzuBackend":  # noqa: F821
     storage = KuzuBackend()
     storage.initialize(db_path, read_only=True)
     return storage
+
+
+def _has_index_metadata(axon_dir: Path) -> bool:
+    return (axon_dir / "meta.json").exists()
+
+
+def _has_index_database(db_path: Path) -> bool:
+    return db_path.is_dir() and any(db_path.iterdir())
+
+
+def _has_existing_index(axon_dir: Path, db_path: Path) -> bool:
+    return _has_index_metadata(axon_dir) and _has_index_database(db_path)
 
 
 def _update_cache_path() -> Path:
@@ -178,6 +192,8 @@ def _build_meta(result: "PipelineResult", repo_path: Path) -> dict:  # noqa: F82
         "version": __version__,
         "name": repo_path.name,
         "path": str(repo_path),
+        "embedding_model": _DEFAULT_MODEL,
+        "embedding_dimensions": EMBEDDING_DIMENSIONS,
         "stats": {
             "files": result.files,
             "symbols": result.symbols,
@@ -414,7 +430,7 @@ def _initialize_writable_storage(
     axon_dir = repo_path / ".axon"
     db_path = axon_dir / "kuzu"
 
-    if not auto_index and not (axon_dir / "meta.json").exists():
+    if not auto_index and not _has_existing_index(axon_dir, db_path):
         console.print(
             "[red]Error:[/red] No index found. Run [cyan]axon analyze .[/cyan] first to index this codebase."
         )
@@ -425,7 +441,7 @@ def _initialize_writable_storage(
     storage = KuzuBackend()
     storage.initialize(db_path)
 
-    if not (axon_dir / "meta.json").exists():
+    if not _has_index_metadata(axon_dir):
         console.print("[bold]Running initial index...[/bold]")
         _, result = run_pipeline(repo_path, storage)
         meta = _build_meta(result, repo_path)
@@ -435,6 +451,8 @@ def _initialize_writable_storage(
             _register_in_global_registry(meta, repo_path)
         except Exception:
             logger.debug("Failed to register repo in global registry", exc_info=True)
+    else:
+        ensure_current_embeddings(storage, repo_path)
 
     return storage, axon_dir, db_path
 
@@ -564,10 +582,46 @@ def _run_shared_host(
         _clear_host_meta(repo_path)
         storage.close()
 
+def _run_background_embeddings(
+    graph: "KnowledgeGraph",
+    db_path: Path,
+    meta_path: Path,
+    repo_path: Path,
+) -> None:
+    """Generate embeddings in a background thread with its own storage connection."""
+    from axon.core.ingestion.pipeline import _run_embedding_phase, PipelineResult
+
+    bg_storage = KuzuBackend()
+    bg_storage.initialize(db_path)
+    try:
+        bg_result = PipelineResult()
+        _run_embedding_phase(graph, bg_storage, bg_result, lambda _phase, _pct: None)
+
+        # Update meta.json with embedding count.
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            meta["stats"]["embeddings"] = bg_result.embeddings
+            meta_path.write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
+        except Exception:
+            logger.debug("Failed to update meta.json with embedding count", exc_info=True)
+
+        if bg_result.embeddings > 0:
+            console.print(
+                f"[dim]Background embeddings complete: {bg_result.embeddings} vectors generated.[/dim]"
+            )
+    except Exception:
+        logger.warning("Background embedding failed — semantic search unavailable", exc_info=True)
+    finally:
+        bg_storage.close()
+
+
 @app.command()
 def analyze(
     path: Path = typer.Argument(Path("."), help="Path to the repository to index."),
     no_embeddings: bool = typer.Option(False, "--no-embeddings", help="Skip vector embedding generation."),
+    foreground_embeddings: bool = typer.Option(
+        False, "--foreground-embeddings", help="Generate embeddings synchronously instead of in the background.",
+    ),
 ) -> None:
     """Index a repository into a knowledge graph."""
     repo_path = path.resolve()
@@ -584,6 +638,9 @@ def analyze(
     storage = KuzuBackend()
     storage.initialize(db_path)
 
+    # Run pipeline: skip embeddings here if we'll do them in the background.
+    run_embeddings_inline = foreground_embeddings and not no_embeddings
+
     result: PipelineResult | None = None
     with Progress(
         SpinnerColumn(),
@@ -596,11 +653,11 @@ def analyze(
         def on_progress(phase: str, pct: float) -> None:
             progress.update(task, description=f"{phase} ({pct:.0%})")
 
-        _, result = run_pipeline(
+        graph, result = run_pipeline(
             repo_path=repo_path,
             storage=storage,
             progress_callback=on_progress,
-            embeddings=not no_embeddings,
+            embeddings=run_embeddings_inline,
         )
 
     meta = _build_meta(result, repo_path)
@@ -611,6 +668,17 @@ def analyze(
         _register_in_global_registry(meta, repo_path)
     except Exception:
         logger.debug("Failed to register repo in global registry", exc_info=True)
+
+    storage.close()
+
+    # Launch background embedding thread if needed.
+    if not no_embeddings and not run_embeddings_inline:
+        embed_thread = threading.Thread(
+            target=_run_background_embeddings,
+            args=(graph, db_path, meta_path, repo_path),
+            daemon=True,
+        )
+        embed_thread.start()
 
     console.print()
     console.print("[bold green]Indexing complete.[/bold green]")
@@ -625,11 +693,15 @@ def analyze(
         console.print(f"  Dead code:      {result.dead_code}")
     if result.coupled_pairs > 0:
         console.print(f"  Coupled pairs:  {result.coupled_pairs}")
-    if result.embeddings > 0:
+    if run_embeddings_inline and result.embeddings > 0:
         console.print(f"  Embeddings:     {result.embeddings}")
+    elif not no_embeddings and not run_embeddings_inline:
+        console.print("  Embeddings:     [dim]generating in background...[/dim]")
     console.print(f"  Duration:       {result.duration_seconds:.2f}s")
 
-    storage.close()
+    # Wait for background embeddings to finish before exiting.
+    if not no_embeddings and not run_embeddings_inline:
+        embed_thread.join()
 
 @app.command()
 def status() -> None:
@@ -787,6 +859,8 @@ def watch() -> None:
             _register_in_global_registry(meta, repo_path)
         except Exception:
             logger.debug("Failed to register repo in global registry", exc_info=True)
+    else:
+        ensure_current_embeddings(storage, repo_path)
 
     console.print(f"[bold]Watching[/bold] {repo_path} for changes (Ctrl+C to stop)")
 
@@ -920,15 +994,20 @@ def ui(
         )
         return
 
-    db_path = repo_path / ".axon" / "kuzu"
-    if not db_path.exists():
-        console.print(
-            "[red]Error:[/red] No index found. Run [cyan]axon analyze .[/cyan] first to index this codebase."
-        )
-        raise typer.Exit(code=1)
+    storage, _, db_path = _initialize_writable_storage(repo_path, auto_index=False)
+    runtime = AxonRuntime(
+        storage=storage,
+        repo_path=repo_path,
+        watch=watch_files,
+        owns_storage=True,
+    )
 
     web_app = web_app_module.create_app(
-        db_path=db_path, repo_path=repo_path, watch=watch_files, dev=dev,
+        db_path=db_path,
+        repo_path=repo_path,
+        watch=watch_files,
+        dev=dev,
+        runtime=runtime,
     )
 
     if not no_open:

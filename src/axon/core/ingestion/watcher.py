@@ -13,6 +13,7 @@ native debouncing.  Changes are processed in tiers:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import subprocess
 import time
@@ -22,7 +23,8 @@ import watchfiles
 
 from axon.config.ignore import load_gitignore, should_ignore
 from axon.config.languages import is_supported
-from axon.core.embeddings.embedder import embed_nodes
+from axon.core.embeddings.embedder import _DEFAULT_MODEL, embed_graph, embed_nodes
+from axon.core.storage.base import EMBEDDING_DIMENSIONS
 from axon.core.graph.graph import KnowledgeGraph
 from axon.core.graph.model import NodeLabel, RelType
 from axon.core.ingestion.community import process_communities
@@ -44,6 +46,55 @@ MAX_DIRTY_AGE = 60.0
 
 # How often watchfiles yields (controls quiet-period check granularity).
 _POLL_INTERVAL_MS = 500
+
+
+def _embedding_meta_path(repo_path: Path) -> Path:
+    return repo_path / ".axon" / "meta.json"
+
+
+def _load_embedding_meta(repo_path: Path) -> dict | None:
+    meta_path = _embedding_meta_path(repo_path)
+    if not meta_path.exists():
+        return None
+    try:
+        return json.loads(meta_path.read_text(encoding="utf-8"))
+    except Exception:
+        logger.debug("Failed to read meta.json", exc_info=True)
+        return None
+
+
+def ensure_current_embeddings(storage: StorageBackend, repo_path: Path) -> bool:
+    """Re-embed the full graph when the stored embedding model is outdated."""
+    meta = _load_embedding_meta(repo_path)
+    if meta is None:
+        return False
+
+    stored_model = meta.get("embedding_model")
+    if stored_model == _DEFAULT_MODEL:
+        return False
+
+    logger.info(
+        "Embedding model changed from %s to %s, re-embedding all symbols",
+        stored_model or "unknown",
+        _DEFAULT_MODEL,
+    )
+
+    try:
+        graph = storage.load_graph()
+        embeddings = embed_graph(graph)
+        if embeddings:
+            storage.store_embeddings(embeddings)
+
+        meta["embedding_model"] = _DEFAULT_MODEL
+        meta["embedding_dimensions"] = EMBEDDING_DIMENSIONS
+        _embedding_meta_path(repo_path).write_text(
+            json.dumps(meta, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        return True
+    except Exception:
+        logger.warning("Full re-embedding failed", exc_info=True)
+        return False
 
 
 def _get_head_sha(repo_path: Path) -> str | None:
@@ -186,15 +237,16 @@ def _run_incremental_global_phases(
             storage.add_relationships(coupled_rels)
         logger.info("Coupling: %d pairs", num_coupled)
 
-    dirty_node_ids = _compute_dirty_node_ids(graph, dirty_files)
-    if dirty_node_ids:
-        logger.info("Re-embedding %d nodes...", len(dirty_node_ids))
-        try:
-            embeddings = embed_nodes(graph, dirty_node_ids)
-            if embeddings:
-                storage.upsert_embeddings(embeddings)
-        except Exception:
-            logger.warning("Incremental embedding failed", exc_info=True)
+    if not ensure_current_embeddings(storage, repo_path):
+        dirty_node_ids = _compute_dirty_node_ids(graph, dirty_files)
+        if dirty_node_ids:
+            logger.info("Re-embedding %d nodes...", len(dirty_node_ids))
+            try:
+                embeddings = embed_nodes(graph, dirty_node_ids)
+                if embeddings:
+                    storage.upsert_embeddings(embeddings)
+            except Exception:
+                logger.warning("Incremental embedding failed", exc_info=True)
 
     storage.rebuild_fts_indexes()
 

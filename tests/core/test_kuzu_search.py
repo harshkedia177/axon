@@ -151,11 +151,12 @@ class TestEmbeddingsAndVectorSearch:
         backend.add_nodes([node])
 
         # Store an embedding for that node.
-        emb = NodeEmbedding(node_id=node.id, embedding=[1.0, 0.0, 0.0])
+        vec = [1.0] + [0.0] * 383
+        emb = NodeEmbedding(node_id=node.id, embedding=vec)
         backend.store_embeddings([emb])
 
         # Search with the same vector -- cosine similarity should be 1.0.
-        results = backend.vector_search([1.0, 0.0, 0.0], limit=5)
+        results = backend.vector_search(vec, limit=5)
         assert len(results) >= 1
         top = results[0]
         assert top.node_id == node.id
@@ -163,7 +164,7 @@ class TestEmbeddingsAndVectorSearch:
         assert top.node_name == "embed_func"
 
     def test_vector_search_empty(self, backend: KuzuBackend) -> None:
-        results = backend.vector_search([1.0, 0.0, 0.0], limit=5)
+        results = backend.vector_search([1.0] + [0.0] * 383, limit=5)
         assert results == []
 
     def test_vector_search_ranking(self, backend: KuzuBackend) -> None:
@@ -172,12 +173,15 @@ class TestEmbeddingsAndVectorSearch:
         backend.add_nodes([n1, n2])
 
         # close_func embedding is close to query, far_func is orthogonal.
+        close_vec = [0.9, 0.1] + [0.0] * 382
+        far_vec = [0.0, 0.0, 1.0] + [0.0] * 381
         backend.store_embeddings([
-            NodeEmbedding(node_id=n1.id, embedding=[0.9, 0.1, 0.0]),
-            NodeEmbedding(node_id=n2.id, embedding=[0.0, 0.0, 1.0]),
+            NodeEmbedding(node_id=n1.id, embedding=close_vec),
+            NodeEmbedding(node_id=n2.id, embedding=far_vec),
         ])
 
-        results = backend.vector_search([1.0, 0.0, 0.0], limit=5)
+        query_vec = [1.0] + [0.0] * 383
+        results = backend.vector_search(query_vec, limit=5)
         assert len(results) == 2
         assert results[0].node_id == n1.id
         assert results[0].score > results[1].score
@@ -188,28 +192,30 @@ class TestEmbeddingsAndVectorSearch:
         for i in range(5):
             n = _make_node(name=f"vfunc_{i}", file_path=f"src/v{i}.py")
             nodes.append(n)
-            # All somewhat similar embeddings.
-            vec = [0.0] * 5
+            # All somewhat similar embeddings — one-hot in first 5 dims, rest zeros.
+            vec = [0.0] * 384
             vec[i] = 1.0
             embeddings.append(NodeEmbedding(node_id=n.id, embedding=vec))
         backend.add_nodes(nodes)
         backend.store_embeddings(embeddings)
 
-        results = backend.vector_search([1.0, 0.5, 0.3, 0.1, 0.0], limit=2)
+        query_vec = [1.0, 0.5, 0.3, 0.1, 0.0] + [0.0] * 379
+        results = backend.vector_search(query_vec, limit=2)
         assert len(results) == 2
 
     def test_store_embeddings_upsert(self, backend: KuzuBackend) -> None:
         node = _make_node(name="upsert_func", file_path="src/u.py")
         backend.add_nodes([node])
 
-        emb1 = NodeEmbedding(node_id=node.id, embedding=[1.0, 0.0])
+        emb1 = NodeEmbedding(node_id=node.id, embedding=[1.0] + [0.0] * 383)
         backend.store_embeddings([emb1])
 
-        emb2 = NodeEmbedding(node_id=node.id, embedding=[0.0, 1.0])
+        emb2 = NodeEmbedding(node_id=node.id, embedding=[0.0, 1.0] + [0.0] * 382)
         backend.store_embeddings([emb2])
 
-        # Search with [0, 1] should find it with high similarity.
-        results = backend.vector_search([0.0, 1.0], limit=5)
+        # Search with [0, 1, 0...] should find it with high similarity.
+        query_vec = [0.0, 1.0] + [0.0] * 382
+        results = backend.vector_search(query_vec, limit=5)
         assert len(results) == 1
         assert results[0].score == pytest.approx(1.0, abs=1e-6)
 

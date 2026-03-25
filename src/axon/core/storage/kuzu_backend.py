@@ -13,7 +13,6 @@ import json
 import hashlib
 import json
 import logging
-import math
 import tempfile
 import threading
 import time
@@ -93,21 +92,12 @@ def escape_cypher(value: str) -> str:
     return value
 
 
-def _safe_vec_literal(vector: list[float]) -> str:
-    parts = []
-    for v in vector:
-        f = float(v)
-        if not math.isfinite(f):
-            raise ValueError(f"Non-finite float in embedding vector: {f}")
-        parts.append(repr(f))
-    return "[" + ", ".join(parts) + "]"
-
 def _table_for_id(node_id: str) -> str | None:
     """Extract the table name from a node ID by mapping its label prefix."""
     prefix = node_id.split(":", 1)[0]
     return _LABEL_TO_TABLE.get(prefix)
 
-_EMBEDDING_PROPERTIES = "node_id STRING, vec DOUBLE[], PRIMARY KEY(node_id)"
+_EMBEDDING_PROPERTIES = "node_id STRING, vec FLOAT[384], PRIMARY KEY(node_id)"
 
 class KuzuBackend:
     """StorageBackend implementation backed by KuzuDB.
@@ -630,15 +620,15 @@ class KuzuBackend:
         """
         conn = self._require_conn()
         limit = int(limit)
-        vec_literal = _safe_vec_literal(vector)
 
         try:
             with self._lock:
                 result = conn.execute(
-                    f"MATCH (e:Embedding) "
-                    f"RETURN e.node_id, "
-                    f"array_cosine_similarity(e.vec, {vec_literal}) AS sim "
-                    f"ORDER BY sim DESC LIMIT {limit}"
+                    "MATCH (e:Embedding) "
+                    "RETURN e.node_id, "
+                    "array_cosine_similarity(e.vec, CAST($vec, 'FLOAT[384]')) AS sim "
+                    "ORDER BY sim DESC LIMIT $lim",
+                    parameters={"vec": vector, "lim": limit},
                 )
         except Exception:
             logger.debug("vector_search failed", exc_info=True)

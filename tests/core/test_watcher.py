@@ -5,6 +5,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+import watchfiles
 
 from axon.core.graph.graph import KnowledgeGraph
 from axon.core.graph.model import GraphNode, GraphRelationship, NodeLabel, RelType
@@ -13,6 +14,7 @@ from axon.core.ingestion.walker import FileEntry, read_file
 from axon.core.ingestion.watcher import (
     _compute_dirty_node_ids,
     _get_head_sha,
+    _make_watch_filter,
     _reindex_files,
     _run_incremental_global_phases,
 )
@@ -296,6 +298,19 @@ class TestWatcherReindexFiles:
         # Returns 1: the deleted file was processed (nodes removed from storage).
         assert count == 1
 
+    def test_skips_deleted_files_in_ignored_dirs(
+        self, tmp_repo: Path, storage: KuzuBackend
+    ) -> None:
+        run_pipeline(tmp_repo, storage)
+
+        # A file that never existed in the index (lives in an ignored directory).
+        ignored_deleted = tmp_repo / "build" / "output.py"
+
+        count, _paths = _reindex_files([ignored_deleted], tmp_repo, storage)
+
+        # The ignored path should not be processed at all.
+        assert count == 0
+
     def test_handles_multiple_files(
         self, tmp_repo: Path, storage: KuzuBackend
     ) -> None:
@@ -318,6 +333,46 @@ class TestWatcherReindexFiles:
         )
 
         assert count == 2
+
+
+class TestWatchFilter:
+    """Tests for _make_watch_filter — the gitignore-aware watchfiles filter."""
+
+    def test_allows_regular_source_file(self, tmp_repo: Path) -> None:
+        watch_filter = _make_watch_filter(tmp_repo, None)
+        src_file = str(tmp_repo / "src" / "app.py")
+        assert watch_filter(watchfiles.Change.modified, src_file) is True
+
+    def test_blocks_default_ignored_directory(self, tmp_repo: Path) -> None:
+        watch_filter = _make_watch_filter(tmp_repo, None)
+        cached = str(tmp_repo / "__pycache__" / "module.cpython-311.pyc")
+        assert watch_filter(watchfiles.Change.added, cached) is False
+
+    def test_blocks_gitignore_pattern(self, tmp_repo: Path) -> None:
+        # Write a .gitignore that excludes "build/" directory.
+        (tmp_repo / ".gitignore").write_text("build/\n", encoding="utf-8")
+        gitignore_patterns = ["build/"]
+        watch_filter = _make_watch_filter(tmp_repo, gitignore_patterns)
+        build_file = str(tmp_repo / "build" / "output.py")
+        assert watch_filter(watchfiles.Change.added, build_file) is False
+
+    def test_allows_non_ignored_file_with_gitignore(self, tmp_repo: Path) -> None:
+        gitignore_patterns = ["build/", "dist/", "*.log"]
+        watch_filter = _make_watch_filter(tmp_repo, gitignore_patterns)
+        normal_file = str(tmp_repo / "src" / "main.py")
+        assert watch_filter(watchfiles.Change.modified, normal_file) is True
+
+    def test_blocks_node_modules(self, tmp_repo: Path) -> None:
+        watch_filter = _make_watch_filter(tmp_repo, None)
+        pkg_file = str(tmp_repo / "node_modules" / "lodash" / "index.js")
+        assert watch_filter(watchfiles.Change.modified, pkg_file) is False
+
+    def test_handles_path_outside_repo(self, tmp_repo: Path, tmp_path: Path) -> None:
+        """Paths outside repo_path are passed through without filtering."""
+        watch_filter = _make_watch_filter(tmp_repo, None)
+        outside = str(tmp_path / "other" / "file.py")
+        # Outside repo_path: our filter defers to DefaultFilter (not hidden/ignored) → True.
+        assert watch_filter(watchfiles.Change.modified, outside) is True
 
 
 class TestGetHeadSha:

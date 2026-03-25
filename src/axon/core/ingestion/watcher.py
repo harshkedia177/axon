@@ -63,6 +63,31 @@ def _get_head_sha(repo_path: Path) -> str | None:
     return None
 
 
+def _make_watch_filter(
+    repo_path: Path,
+    gitignore_patterns: list[str] | None,
+):
+    """Return a watchfiles-compatible filter that respects .gitignore.
+
+    Wraps :class:`watchfiles.DefaultFilter` and additionally skips any path
+    that :func:`~axon.config.ignore.should_ignore` would reject, so the watcher
+    never surfaces events from build artefact directories, ``node_modules``,
+    ``mysql_data``, or any other gitignored path.
+    """
+    default_filter = watchfiles.DefaultFilter()
+
+    def watch_filter(change_type: watchfiles.Change, path_str: str) -> bool:
+        if not default_filter(change_type, path_str):
+            return False
+        try:
+            relative = str(Path(path_str).relative_to(repo_path))
+        except ValueError:
+            return True  # outside repo_path — leave the decision to watchfiles
+        return not should_ignore(relative, gitignore_patterns)
+
+    return watch_filter
+
+
 def _reindex_files(
     changed_paths: list[Path],
     repo_path: Path,
@@ -80,6 +105,8 @@ def _reindex_files(
         if not abs_path.is_file():
             try:
                 relative = str(abs_path.relative_to(repo_path))
+                if should_ignore(relative, gitignore_patterns):
+                    continue
                 storage.remove_nodes_by_file(relative)
                 reindexed_paths.add(relative)
             except (ValueError, OSError):
@@ -232,6 +259,7 @@ async def watch_repo(
 
     async for changes in watchfiles.awatch(
         repo_path,
+        watch_filter=_make_watch_filter(repo_path, gitignore),
         rust_timeout=_POLL_INTERVAL_MS,
         yield_on_timeout=True,
         stop_event=stop_event,

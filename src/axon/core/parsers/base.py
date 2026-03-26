@@ -21,7 +21,9 @@ class SymbolInfo:
     content: str
     signature: str = ""
     class_name: str = ""  # for methods: the owning class
-    decorators: list[str] = field(default_factory=list)  # e.g. ["staticmethod", "server.list_tools"]
+    # e.g. ["staticmethod", "server.list_tools"]
+    decorators: list[str] = field(default_factory=list)
+
 
 @dataclass
 class ImportInfo:
@@ -43,6 +45,7 @@ class ImportInfo:
     is_relative: bool = False
     alias: str = ""  # local binding name when aliased (e.g. "np" for "import numpy as np")
 
+
 @dataclass
 class CallInfo:
     """A parsed function call."""
@@ -51,6 +54,9 @@ class CallInfo:
     line: int
     receiver: str = ""  # for method calls: the object (e.g., "self", "user")
     arguments: list[str] = field(default_factory=list)  # bare identifier arguments (callbacks)
+    # variable name if result is assigned (e.g. "user" in "user = User()")
+    assignment_target: str = ""
+
 
 @dataclass
 class TypeRef:
@@ -60,6 +66,8 @@ class TypeRef:
     kind: str  # "param", "return", "variable"
     line: int
     param_name: str = ""  # for param types: the parameter name
+    variable_name: str = ""  # for variable types: the annotated variable name
+
 
 @dataclass
 class ParseResult:
@@ -73,6 +81,17 @@ class ParseResult:
         default_factory=list
     )  # (class_name, kind, parent_name) where kind is "extends" or "implements"
     exports: list[str] = field(default_factory=list)  # names from __all__ or export statements
+    func_refs: list[FuncRef] = field(default_factory=list)  # first-class function references
+
+
+@dataclass
+class FuncRef:
+    """A first-class function reference (e.g. ``handler = my_func``)."""
+
+    name: str  # the referenced function name
+    line: int
+    target_var: str = ""  # the variable being assigned to
+
 
 class LanguageParser(ABC):
     """Base interface for language-specific parsers."""

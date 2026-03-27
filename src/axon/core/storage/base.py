@@ -7,7 +7,9 @@ supporting data classes for search results and embeddings.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
@@ -26,9 +28,39 @@ class SearchResult:
     label: str = ""
     snippet: str = ""
 
-EMBEDDING_DIMENSIONS: int = 384
-"""Number of dimensions expected for all embedding vectors."""
 
+EMBEDDING_DIMENSIONS: int = 384
+"""Default embedding dimensions for local Matryoshka-truncated embeddings."""
+
+_REMOTE_MODEL_DIMENSIONS: dict[str, int] = {
+    "BAAI/bge-large-en-v1.5": 1024,
+    "BAAI/bge-base-en-v1.5": 768,
+    "BAAI/bge-small-en-v1.5": 384,
+    "nomic-ai/nomic-embed-text-v1.5": 768,
+}
+
+
+@lru_cache(maxsize=1)
+def get_embedding_dimensions() -> int:
+    """Return the active embedding dimensionality for the current process."""
+    configured = os.environ.get("AXON_EMBEDDING_DIMENSIONS", "").strip()
+    if configured:
+        try:
+            value = int(configured)
+        except ValueError as exc:
+            raise ValueError(
+                f"AXON_EMBEDDING_DIMENSIONS must be an integer, got {configured!r}"
+            ) from exc
+        if value <= 0:
+            raise ValueError("AXON_EMBEDDING_DIMENSIONS must be greater than 0")
+        return value
+
+    base_url = os.environ.get("AXON_EMBEDDING_BASE_URL", "").strip()
+    model = os.environ.get("AXON_EMBEDDING_MODEL", "").strip()
+    if base_url and model:
+        return _REMOTE_MODEL_DIMENSIONS.get(model, EMBEDDING_DIMENSIONS)
+
+    return EMBEDDING_DIMENSIONS
 
 
 @dataclass
@@ -39,11 +71,12 @@ class NodeEmbedding:
     embedding: list[float] = field(default_factory=list)
 
     def __post_init__(self) -> None:
-        if self.embedding and len(self.embedding) != EMBEDDING_DIMENSIONS:
+        expected_dimensions = get_embedding_dimensions()
+        if self.embedding and len(self.embedding) != expected_dimensions:
             raise ValueError(
-                f"Expected embedding of {EMBEDDING_DIMENSIONS} dimensions, "
-                f"got {len(self.embedding)}"
+                f"Expected embedding of {expected_dimensions} dimensions, got {len(self.embedding)}"
             )
+
 
 @runtime_checkable
 class StorageBackend(Protocol):
@@ -79,7 +112,9 @@ class StorageBackend(Protocol):
         ...
 
     def get_inbound_cross_file_edges(
-        self, file_path: str, exclude_source_files: set[str] | None = None,
+        self,
+        file_path: str,
+        exclude_source_files: set[str] | None = None,
     ) -> list[GraphRelationship]:
         """Return inbound edges where the target is in *file_path* and the source is not.
 
@@ -148,9 +183,7 @@ class StorageBackend(Protocol):
         """Full-text search across indexed node content."""
         ...
 
-    def fuzzy_search(
-        self, query: str, limit: int, max_distance: int = 2
-    ) -> list[SearchResult]:
+    def fuzzy_search(self, query: str, limit: int, max_distance: int = 2) -> list[SearchResult]:
         """Fuzzy name search by edit distance."""
         ...
 

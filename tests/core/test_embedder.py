@@ -1,23 +1,26 @@
 from __future__ import annotations
 
+import json
+import os
 from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
 
 from axon.core.embeddings.embedder import (
-    EMBEDDABLE_LABELS,
     _DEFAULT_BATCH_SIZE,
     _DEFAULT_DIMENSIONS,
     _DEFAULT_MODEL,
+    EMBEDDABLE_LABELS,
     _get_model,
+    _HttpEmbedder,
     embed_graph,
     embed_nodes,
     embed_query,
 )
 from axon.core.graph.graph import KnowledgeGraph
 from axon.core.graph.model import GraphNode, GraphRelationship, NodeLabel, RelType, generate_id
-from axon.core.storage.base import EMBEDDING_DIMENSIONS, NodeEmbedding
+from axon.core.storage.base import EMBEDDING_DIMENSIONS, NodeEmbedding, get_embedding_dimensions
 
 
 def _vec768(base: list[float] | None = None) -> np.ndarray:
@@ -124,10 +127,37 @@ class TestModelDefaults:
         assert "nomic" in _DEFAULT_MODEL
 
     def test_default_dimensions(self) -> None:
-        assert _DEFAULT_DIMENSIONS == 384
+        assert _DEFAULT_DIMENSIONS == EMBEDDING_DIMENSIONS
 
     def test_default_batch_size(self) -> None:
         assert _DEFAULT_BATCH_SIZE == 32
+
+
+class TestEmbeddingDimensions:
+    def test_remote_bge_large_dimensions_are_inferred(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "AXON_EMBEDDING_BASE_URL": "http://example.test/v1",
+                "AXON_EMBEDDING_MODEL": "BAAI/bge-large-en-v1.5",
+            },
+            clear=False,
+        ):
+            _get_model.cache_clear()
+            assert get_embedding_dimensions() == 1024
+
+    def test_explicit_dimension_override_wins(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "AXON_EMBEDDING_BASE_URL": "http://example.test/v1",
+                "AXON_EMBEDDING_MODEL": "BAAI/bge-large-en-v1.5",
+                "AXON_EMBEDDING_DIMENSIONS": "768",
+            },
+            clear=False,
+        ):
+            _get_model.cache_clear()
+            assert get_embedding_dimensions() == 768
 
 
 class TestEmbeddableLabels:
@@ -154,7 +184,9 @@ class TestEmbeddableLabels:
 
 class TestEmbedGraphBasic:
     @patch("fastembed.TextEmbedding")
-    def test_returns_node_embeddings(self, mock_te_cls: MagicMock, sample_graph: KnowledgeGraph) -> None:
+    def test_returns_node_embeddings(
+        self, mock_te_cls: MagicMock, sample_graph: KnowledgeGraph
+    ) -> None:
         mock_model = MagicMock()
         mock_model.passage_embed.return_value = iter(
             [_vec768([0.1, 0.2, 0.3]), _vec768([0.4, 0.5, 0.6])]
@@ -220,9 +252,7 @@ class TestEmbedGraphBasic:
 
 class TestEmbedGraphFiltering:
     @patch("fastembed.TextEmbedding")
-    def test_skips_folder_nodes(
-        self, mock_te_cls: MagicMock, sample_graph: KnowledgeGraph
-    ) -> None:
+    def test_skips_folder_nodes(self, mock_te_cls: MagicMock, sample_graph: KnowledgeGraph) -> None:
         mock_model = MagicMock()
         mock_model.passage_embed.return_value = iter(
             [_vec768([0.1, 0.2, 0.3]), _vec768([0.4, 0.5, 0.6])]
@@ -295,12 +325,8 @@ class TestEmbedGraphEmpty:
         mock_te_cls.return_value = mock_model
 
         graph = KnowledgeGraph()
-        graph.add_node(
-            GraphNode(id="folder::src", label=NodeLabel.FOLDER, name="src")
-        )
-        graph.add_node(
-            GraphNode(id="community::auth", label=NodeLabel.COMMUNITY, name="auth")
-        )
+        graph.add_node(GraphNode(id="folder::src", label=NodeLabel.FOLDER, name="src"))
+        graph.add_node(GraphNode(id="community::auth", label=NodeLabel.COMMUNITY, name="auth"))
 
         results = embed_graph(graph)
 
@@ -394,7 +420,11 @@ class TestEmbedGraphTextGeneration:
 
         # The texts list passed to model.passage_embed should contain both texts
         embed_call_args = mock_model.passage_embed.call_args
-        texts_arg = embed_call_args.args[0] if embed_call_args.args else embed_call_args.kwargs.get("documents", [])
+        texts_arg = (
+            embed_call_args.args[0]
+            if embed_call_args.args
+            else embed_call_args.kwargs.get("documents", [])
+        )
         assert "text for foo" in texts_arg
         assert "text for Bar" in texts_arg
 
@@ -427,7 +457,9 @@ class TestEmbedGraphBatchProcessing:
         assert all(len(r.embedding) == EMBEDDING_DIMENSIONS for r in results)
 
     @patch("fastembed.TextEmbedding")
-    def test_default_batch_size_is_32(self, mock_te_cls: MagicMock, sample_graph: KnowledgeGraph) -> None:
+    def test_default_batch_size_is_32(
+        self, mock_te_cls: MagicMock, sample_graph: KnowledgeGraph
+    ) -> None:
         mock_model = MagicMock()
         mock_model.passage_embed.return_value = iter(
             [_vec768([0.1, 0.2, 0.3]), _vec768([0.4, 0.5, 0.6])]
@@ -487,29 +519,35 @@ def _make_incremental_graph() -> KnowledgeGraph:
     graph = KnowledgeGraph()
     fn_a = GraphNode(
         id=generate_id(NodeLabel.FUNCTION, "src/a.py", "func_a"),
-        label=NodeLabel.FUNCTION, name="func_a", file_path="src/a.py",
+        label=NodeLabel.FUNCTION,
+        name="func_a",
+        file_path="src/a.py",
         signature="def func_a():",
     )
     fn_b = GraphNode(
         id=generate_id(NodeLabel.FUNCTION, "src/b.py", "func_b"),
-        label=NodeLabel.FUNCTION, name="func_b", file_path="src/b.py",
+        label=NodeLabel.FUNCTION,
+        name="func_b",
+        file_path="src/b.py",
         signature="def func_b():",
     )
     graph.add_node(fn_a)
     graph.add_node(fn_b)
-    graph.add_relationship(GraphRelationship(
-        id=f"calls:{fn_a.id}->{fn_b.id}",
-        type=RelType.CALLS, source=fn_a.id, target=fn_b.id,
-    ))
+    graph.add_relationship(
+        GraphRelationship(
+            id=f"calls:{fn_a.id}->{fn_b.id}",
+            type=RelType.CALLS,
+            source=fn_a.id,
+            target=fn_b.id,
+        )
+    )
     return graph
 
 
 class TestEmbeddingAlignment:
     @patch("axon.core.embeddings.embedder.generate_text")
     @patch("fastembed.TextEmbedding")
-    def test_embedding_alignment(
-        self, mock_te_cls: MagicMock, mock_gen_text: MagicMock
-    ) -> None:
+    def test_embedding_alignment(self, mock_te_cls: MagicMock, mock_gen_text: MagicMock) -> None:
         graph = KnowledgeGraph()
         node_a = GraphNode(
             id="function:src/a.py:func_a",
@@ -575,7 +613,9 @@ class TestEmbedNodes:
         graph = KnowledgeGraph()
         folder = GraphNode(
             id=generate_id(NodeLabel.FOLDER, "src", "src"),
-            label=NodeLabel.FOLDER, name="src", file_path="src",
+            label=NodeLabel.FOLDER,
+            name="src",
+            file_path="src",
         )
         graph.add_node(folder)
         results = embed_nodes(graph, {folder.id})
@@ -623,3 +663,78 @@ class TestEmbedNodes:
         # After Matryoshka truncation, we get first 384 dims of the 768d vector
         expected = _vec768([1.0, 2.0, 3.0])[:384].tolist()
         assert results[0].embedding == pytest.approx(expected)
+
+
+class _FakeUrlOpenResponse:
+    def __init__(self, payload: dict) -> None:
+        self._payload = payload
+
+    def read(self) -> bytes:
+        return json.dumps(self._payload).encode()
+
+    def __enter__(self) -> "_FakeUrlOpenResponse":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        return None
+
+
+class TestRemoteHttpEmbedder:
+    def test_http_embedder_uses_openai_compatible_endpoint(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "AXON_EMBEDDING_BASE_URL": "http://example.test/v1",
+                "AXON_EMBEDDING_MODEL": "BAAI/bge-large-en-v1.5",
+                "AXON_EMBEDDING_API_KEY": "secret",
+            },
+            clear=False,
+        ):
+            import importlib
+
+            import axon.core.embeddings.embedder as embedder_module
+
+            embedder = importlib.reload(embedder_module)
+            try:
+                model = embedder._get_model(embedder._DEFAULT_MODEL)
+                assert isinstance(model, embedder._HttpEmbedder)
+
+                payload = {
+                    "data": [
+                        {"index": 0, "embedding": [0.5] * 1024},
+                    ]
+                }
+                with patch(
+                    "urllib.request.urlopen", return_value=_FakeUrlOpenResponse(payload)
+                ) as mock_urlopen:
+                    result = embedder.embed_query("test query")
+
+                assert result is not None
+                assert len(result) == 1024
+                assert get_embedding_dimensions() == 1024
+                mock_urlopen.assert_called_once()
+            finally:
+                embedder._get_model.cache_clear()
+                importlib.reload(embedder_module)
+
+    def test_http_embedder_rejects_bad_indexes(self) -> None:
+        embedder = _HttpEmbedder("http://example.test/v1", "BAAI/bge-large-en-v1.5")
+        payload = {
+            "data": [
+                {"index": 1, "embedding": [0.1, 0.2, 0.3]},
+            ]
+        }
+        with patch("urllib.request.urlopen", return_value=_FakeUrlOpenResponse(payload)):
+            with pytest.raises(ValueError, match="indexes mismatch"):
+                list(embedder.passage_embed(["hello"], batch_size=1))
+
+    def test_http_embedder_rejects_non_finite_values(self) -> None:
+        embedder = _HttpEmbedder("http://example.test/v1", "BAAI/bge-large-en-v1.5")
+        payload = {
+            "data": [
+                {"index": 0, "embedding": [0.1, float("nan"), 0.3]},
+            ]
+        }
+        with patch("urllib.request.urlopen", return_value=_FakeUrlOpenResponse(payload)):
+            with pytest.raises(ValueError, match="non-finite"):
+                list(embedder.passage_embed(["hello"], batch_size=1))

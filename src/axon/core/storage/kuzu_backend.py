@@ -9,7 +9,6 @@ covers all source-to-target combinations.
 from __future__ import annotations
 
 import csv
-import json
 import hashlib
 import json
 import logging
@@ -24,7 +23,7 @@ import kuzu
 
 from axon.core.graph.graph import KnowledgeGraph
 from axon.core.graph.model import GraphNode, GraphRelationship, NodeLabel, RelType
-from axon.core.storage.base import NodeEmbedding, SearchResult
+from axon.core.storage.base import NodeEmbedding, SearchResult, get_embedding_dimensions
 
 logger = logging.getLogger(__name__)
 
@@ -39,8 +38,7 @@ _LABEL_MAP: dict[str, NodeLabel] = {label.value: label for label in NodeLabel}
 _REL_TYPE_MAP: dict[str, RelType] = {rt.value: rt for rt in RelType}
 
 _SEARCHABLE_TABLES: list[str] = [
-    t for t in _NODE_TABLE_NAMES
-    if t not in ("Folder", "Community", "Process")
+    t for t in _NODE_TABLE_NAMES if t not in ("Folder", "Community", "Process")
 ]
 
 _NODE_PROPERTIES = (
@@ -73,6 +71,7 @@ _REL_PROPERTIES = (
     "symbols STRING"
 )
 
+
 def _serialize_extra_props(props: dict[str, Any] | None) -> str:
     if not props:
         return ""
@@ -97,7 +96,10 @@ def _table_for_id(node_id: str) -> str | None:
     prefix = node_id.split(":", 1)[0]
     return _LABEL_TO_TABLE.get(prefix)
 
-_EMBEDDING_PROPERTIES = "node_id STRING, vec FLOAT[384], PRIMARY KEY(node_id)"
+
+def _embedding_properties(dimensions: int) -> str:
+    return f"node_id STRING, vec FLOAT[{dimensions}], PRIMARY KEY(node_id)"
+
 
 class KuzuBackend:
     """StorageBackend implementation backed by KuzuDB.
@@ -116,11 +118,55 @@ class KuzuBackend:
         self._conn: kuzu.Connection | None = None
         self._lock = threading.Lock()
         self._embeddings_clean: bool = False
+        self._embedding_dimensions: int = get_embedding_dimensions()
 
     def _require_conn(self) -> kuzu.Connection:
         if self._conn is None:
             raise RuntimeError("KuzuBackend.initialize() must be called before use")
         return self._conn
+
+    def _embedding_cast_type(self) -> str:
+        return f"FLOAT[{self._embedding_dimensions}]"
+
+    def _repo_meta_path(self, db_path: Path) -> Path:
+        return db_path.parent / "meta.json"
+
+    def _reset_embedding_table(self) -> None:
+        conn = self._require_conn()
+        for statement in (
+            "DROP TABLE Embedding",
+            "DROP NODE TABLE Embedding",
+        ):
+            try:
+                conn.execute(statement)
+                break
+            except Exception:
+                continue
+        conn.execute(
+            f"CREATE NODE TABLE IF NOT EXISTS Embedding({_embedding_properties(self._embedding_dimensions)})"
+        )
+        self._embeddings_clean = False
+
+    def _ensure_embedding_schema(self, db_path: Path) -> None:
+        meta_path = self._repo_meta_path(db_path)
+        if not meta_path.exists():
+            return
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except Exception:
+            logger.debug("Failed to read embedding metadata during schema check", exc_info=True)
+            return
+
+        stored_dimensions = meta.get("embedding_dimensions")
+        if stored_dimensions == self._embedding_dimensions:
+            return
+
+        logger.info(
+            "Embedding dimensions changed from %s to %s, recreating Embedding table",
+            stored_dimensions,
+            self._embedding_dimensions,
+        )
+        self._reset_embedding_table()
 
     def initialize(
         self,
@@ -135,21 +181,25 @@ class KuzuBackend:
         In read-only mode, schema creation is skipped (database must already exist).
         Retries on lock contention errors with exponential backoff.
         """
+        self._embedding_dimensions = get_embedding_dimensions()
         for attempt in range(max_retries + 1):
             try:
                 self._db = kuzu.Database(str(path), read_only=read_only)
                 self._conn = kuzu.Connection(self._db)
                 if not read_only:
                     self._create_schema()
+                    self._ensure_embedding_schema(path)
                 return
             except RuntimeError as e:
                 if "lock" in str(e).lower() and attempt < max_retries:
                     logger.debug(
                         "Lock contention on attempt %d/%d, retrying in %.1fs",
-                        attempt + 1, max_retries, retry_delay * (2 ** attempt),
+                        attempt + 1,
+                        max_retries,
+                        retry_delay * (2**attempt),
                     )
                     self.close()
-                    time.sleep(retry_delay * (2 ** attempt))
+                    time.sleep(retry_delay * (2**attempt))
                     continue
                 raise
 
@@ -197,7 +247,9 @@ class KuzuBackend:
         return total
 
     def get_inbound_cross_file_edges(
-        self, file_path: str, exclude_source_files: set[str] | None = None,
+        self,
+        file_path: str,
+        exclude_source_files: set[str] | None = None,
     ) -> list[GraphRelationship]:
         """Return inbound edges where target is in *file_path* and source is not.
 
@@ -241,15 +293,20 @@ class KuzuBackend:
                 if row[9] is not None and row[9] != "":
                     props["symbols"] = str(row[9])
                 rel_id = f"{rel_type_str}:{src_id}->{tgt_id}"
-                edges.append(GraphRelationship(
-                    id=rel_id, type=rel_type,
-                    source=src_id, target=tgt_id,
-                    properties=props,
-                ))
+                edges.append(
+                    GraphRelationship(
+                        id=rel_id,
+                        type=rel_type,
+                        source=src_id,
+                        target=tgt_id,
+                        properties=props,
+                    )
+                )
         except Exception:
             logger.warning(
                 "Failed to query inbound cross-file edges for %s",
-                file_path, exc_info=True,
+                file_path,
+                exc_info=True,
             )
         return edges
 
@@ -533,9 +590,7 @@ class KuzuBackend:
         candidates.sort(key=lambda r: (-r.score, r.node_id))
         return candidates[:limit]
 
-    def fuzzy_search(
-        self, query: str, limit: int, max_distance: int = 2
-    ) -> list[SearchResult]:
+    def fuzzy_search(self, query: str, limit: int, max_distance: int = 2) -> list[SearchResult]:
         """Fuzzy name search using Levenshtein edit distance.
 
         Scans all node tables for symbols whose name is within
@@ -607,9 +662,7 @@ class KuzuBackend:
                     parameters={"nid": emb.node_id, "vec": emb.embedding},
                 )
             except Exception:
-                logger.debug(
-                    "store_embeddings failed for node %s", emb.node_id, exc_info=True
-                )
+                logger.debug("store_embeddings failed for node %s", emb.node_id, exc_info=True)
 
     def vector_search(self, vector: list[float], limit: int) -> list[SearchResult]:
         """Find the closest nodes to *vector* using native ``array_cosine_similarity``.
@@ -626,7 +679,7 @@ class KuzuBackend:
                 result = conn.execute(
                     "MATCH (e:Embedding) "
                     "RETURN e.node_id, "
-                    "array_cosine_similarity(e.vec, CAST($vec, 'FLOAT[384]')) AS sim "
+                    f"array_cosine_similarity(e.vec, CAST($vec, '{self._embedding_cast_type()}')) AS sim "
                     "ORDER BY sim DESC LIMIT $lim",
                     parameters={"vec": vector, "lim": limit},
                 )
@@ -690,9 +743,7 @@ class KuzuBackend:
         mapping: dict[str, str] = {}
         try:
             with self._lock:
-                result = conn.execute(
-                    "MATCH (n:File) RETURN n.file_path, n.content"
-                )
+                result = conn.execute("MATCH (n:File) RETURN n.file_path, n.content")
             while result.has_next():
                 row = result.get_next()
                 fp = row[0] or ""
@@ -804,9 +855,7 @@ class KuzuBackend:
             try:
                 conn.execute(f"MATCH (n:{table}) DETACH DELETE n")
             except Exception:
-                logger.debug(
-                    "delete_synthetic_nodes: failed for %s", table, exc_info=True
-                )
+                logger.debug("delete_synthetic_nodes: failed for %s", table, exc_info=True)
 
     def upsert_embeddings(self, embeddings: list[NodeEmbedding]) -> None:
         """Insert or update embeddings without wiping existing ones."""
@@ -818,13 +867,9 @@ class KuzuBackend:
                     parameters={"nid": emb.node_id, "vec": emb.embedding},
                 )
             except Exception:
-                logger.debug(
-                    "upsert_embeddings failed for %s", emb.node_id, exc_info=True
-                )
+                logger.debug("upsert_embeddings failed for %s", emb.node_id, exc_info=True)
 
-    def update_dead_flags(
-        self, dead_ids: set[str], alive_ids: set[str]
-    ) -> None:
+    def update_dead_flags(self, dead_ids: set[str], alive_ids: set[str]) -> None:
         """Set is_dead=True on *dead_ids* and is_dead=False on *alive_ids*."""
         conn = self._require_conn()
 
@@ -841,9 +886,7 @@ class KuzuBackend:
                         parameters={"ids": id_list, "val": value},
                     )
                 except Exception:
-                    logger.debug(
-                        "update_dead_flags failed for table %s", table, exc_info=True
-                    )
+                    logger.debug("update_dead_flags failed for table %s", table, exc_info=True)
 
         _batch_set(dead_ids, True)
         _batch_set(alive_ids, False)
@@ -946,14 +989,28 @@ class KuzuBackend:
 
         try:
             for table, nodes in by_table.items():
-                self._csv_copy(table, [
-                    [node.id, node.name, node.file_path, node.start_line,
-                     node.end_line, node.content, node.signature, node.language,
-                     node.class_name, node.is_dead, node.is_entry_point,
-                     node.is_exported, (node.properties or {}).get("cohesion"),
-                     _serialize_extra_props(node.properties)]
-                    for node in nodes
-                ])
+                self._csv_copy(
+                    table,
+                    [
+                        [
+                            node.id,
+                            node.name,
+                            node.file_path,
+                            node.start_line,
+                            node.end_line,
+                            node.content,
+                            node.signature,
+                            node.language,
+                            node.class_name,
+                            node.is_dead,
+                            node.is_entry_point,
+                            node.is_exported,
+                            (node.properties or {}).get("cohesion"),
+                            _serialize_extra_props(node.properties),
+                        ]
+                        for node in nodes
+                    ],
+                )
             return True
         except Exception:
             logger.debug("CSV bulk_load_nodes failed, falling back", exc_info=True)
@@ -979,16 +1036,23 @@ class KuzuBackend:
 
         try:
             for (src_table, dst_table), rels in by_pair.items():
-                self._csv_copy(f"CodeRelation_{src_table}_{dst_table}", [
-                    [rel.source, rel.target, rel.type.value,
-                     float((rel.properties or {}).get("confidence", 1.0)),
-                     str((rel.properties or {}).get("role", "")),
-                     int((rel.properties or {}).get("step_number", 0)),
-                     float((rel.properties or {}).get("strength", 0.0)),
-                     int((rel.properties or {}).get("co_changes", 0)),
-                     str((rel.properties or {}).get("symbols", ""))]
-                    for rel in rels
-                ])
+                self._csv_copy(
+                    f"CodeRelation_{src_table}_{dst_table}",
+                    [
+                        [
+                            rel.source,
+                            rel.target,
+                            rel.type.value,
+                            float((rel.properties or {}).get("confidence", 1.0)),
+                            str((rel.properties or {}).get("role", "")),
+                            int((rel.properties or {}).get("step_number", 0)),
+                            float((rel.properties or {}).get("strength", 0.0)),
+                            int((rel.properties or {}).get("co_changes", 0)),
+                            str((rel.properties or {}).get("symbols", "")),
+                        ]
+                        for rel in rels
+                    ],
+                )
             return True
         except Exception:
             logger.debug("CSV bulk_load_rels failed, falling back", exc_info=True)
@@ -1005,7 +1069,7 @@ class KuzuBackend:
             if not self._embeddings_clean:
                 current_ids = [emb.node_id for emb in embeddings]
                 for i in range(0, len(current_ids), 500):
-                    batch = current_ids[i:i + 500]
+                    batch = current_ids[i : i + 500]
                     try:
                         conn.execute(
                             "MATCH (e:Embedding) WHERE e.node_id IN $ids DETACH DELETE e",
@@ -1014,10 +1078,9 @@ class KuzuBackend:
                     except Exception:
                         pass
 
-            self._csv_copy("Embedding", [
-                [emb.node_id, json.dumps(emb.embedding)]
-                for emb in embeddings
-            ])
+            self._csv_copy(
+                "Embedding", [[emb.node_id, json.dumps(emb.embedding)] for emb in embeddings]
+            )
             self._embeddings_clean = False
             return True
         except Exception:
@@ -1043,7 +1106,7 @@ class KuzuBackend:
                 pass
 
         conn.execute(
-            f"CREATE NODE TABLE IF NOT EXISTS Embedding({_EMBEDDING_PROPERTIES})"
+            f"CREATE NODE TABLE IF NOT EXISTS Embedding({_embedding_properties(self._embedding_dimensions)})"
         )
 
         from_to_pairs: list[str] = []
@@ -1053,8 +1116,7 @@ class KuzuBackend:
 
         pairs_clause = ", ".join(from_to_pairs)
         rel_stmt = (
-            f"CREATE REL TABLE GROUP IF NOT EXISTS CodeRelation("
-            f"{pairs_clause}, {_REL_PROPERTIES})"
+            f"CREATE REL TABLE GROUP IF NOT EXISTS CodeRelation({pairs_clause}, {_REL_PROPERTIES})"
         )
         try:
             conn.execute(rel_stmt)
@@ -1161,9 +1223,7 @@ class KuzuBackend:
                 "Insert relationship failed: %s -> %s", rel.source, rel.target, exc_info=True
             )
 
-    def _query_nodes(
-        self, query: str, parameters: dict[str, Any] | None = None
-    ) -> list[GraphNode]:
+    def _query_nodes(self, query: str, parameters: dict[str, Any] | None = None) -> list[GraphNode]:
         """Execute a query returning ``n.*`` columns and convert to GraphNode list."""
         conn = self._require_conn()
         nodes: list[GraphNode] = []

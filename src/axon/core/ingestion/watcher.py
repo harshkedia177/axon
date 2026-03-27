@@ -23,8 +23,10 @@ import watchfiles
 
 from axon.config.ignore import load_gitignore, should_ignore
 from axon.config.languages import is_supported
-from axon.core.embeddings.embedder import _DEFAULT_MODEL, embed_graph, embed_nodes
-from axon.core.storage.base import EMBEDDING_DIMENSIONS
+from axon.core.embeddings.embedder import (
+    embed_graph,
+    embed_nodes,
+)
 from axon.core.graph.graph import KnowledgeGraph
 from axon.core.graph.model import NodeLabel, RelType
 from axon.core.ingestion.community import process_communities
@@ -33,7 +35,7 @@ from axon.core.ingestion.dead_code import process_dead_code
 from axon.core.ingestion.pipeline import reindex_files
 from axon.core.ingestion.processes import process_processes
 from axon.core.ingestion.walker import FileEntry, read_file
-from axon.core.storage.base import StorageBackend
+from axon.core.storage.base import StorageBackend, get_embedding_dimensions
 
 logger = logging.getLogger(__name__)
 
@@ -64,19 +66,24 @@ def _load_embedding_meta(repo_path: Path) -> dict | None:
 
 
 def ensure_current_embeddings(storage: StorageBackend, repo_path: Path) -> bool:
-    """Re-embed the full graph when the stored embedding model is outdated."""
+    """Re-embed the full graph when the stored embedding config is outdated."""
     meta = _load_embedding_meta(repo_path)
     if meta is None:
         return False
 
+    current_dimensions = get_embedding_dimensions()
+    current_model = get_effective_embedding_model_name()
     stored_model = meta.get("embedding_model")
-    if stored_model == _DEFAULT_MODEL:
+    stored_dimensions = meta.get("embedding_dimensions")
+    if stored_model == current_model and stored_dimensions == current_dimensions:
         return False
 
     logger.info(
-        "Embedding model changed from %s to %s, re-embedding all symbols",
+        "Embedding config changed from model=%s dims=%s to model=%s dims=%s, re-embedding all symbols",
         stored_model or "unknown",
-        _DEFAULT_MODEL,
+        stored_dimensions or "unknown",
+        current_model,
+        current_dimensions,
     )
 
     try:
@@ -85,8 +92,8 @@ def ensure_current_embeddings(storage: StorageBackend, repo_path: Path) -> bool:
         if embeddings:
             storage.store_embeddings(embeddings)
 
-        meta["embedding_model"] = _DEFAULT_MODEL
-        meta["embedding_dimensions"] = EMBEDDING_DIMENSIONS
+        meta["embedding_model"] = current_model
+        meta["embedding_dimensions"] = current_dimensions
         _embedding_meta_path(repo_path).write_text(
             json.dumps(meta, indent=2) + "\n",
             encoding="utf-8",
@@ -212,13 +219,11 @@ def _run_incremental_global_phases(
     logger.info("Dead code: %d", num_dead)
 
     if not small_change:
-        new_nodes = (
-            list(graph.get_nodes_by_label(NodeLabel.COMMUNITY))
-            + list(graph.get_nodes_by_label(NodeLabel.PROCESS))
+        new_nodes = list(graph.get_nodes_by_label(NodeLabel.COMMUNITY)) + list(
+            graph.get_nodes_by_label(NodeLabel.PROCESS)
         )
-        new_rels = (
-            list(graph.get_relationships_by_type(RelType.MEMBER_OF))
-            + list(graph.get_relationships_by_type(RelType.STEP_IN_PROCESS))
+        new_rels = list(graph.get_relationships_by_type(RelType.MEMBER_OF)) + list(
+            graph.get_relationships_by_type(RelType.STEP_IN_PROCESS)
         )
         if new_nodes:
             storage.add_nodes(new_nodes)
@@ -267,6 +272,7 @@ async def watch_repo(
     period of QUIET_PERIOD seconds with no new changes. Coupling runs
     only when new git commits are detected.
     """
+
     async def _run_sync(fn, *args):
         if lock is not None:
             async with lock:
@@ -297,7 +303,11 @@ async def watch_repo(
 
         if changed_paths:
             count, reindexed = await _run_sync(
-                _reindex_files, changed_paths, repo_path, storage, gitignore,
+                _reindex_files,
+                changed_paths,
+                repo_path,
+                storage,
+                gitignore,
             )
             if reindexed:
                 dirty_files |= reindexed
@@ -328,7 +338,10 @@ async def watch_repo(
                     logger.info("Running incremental global phases...")
                     await _run_sync(
                         _run_incremental_global_phases,
-                        storage, repo_path, snapshot, run_coupling,
+                        storage,
+                        repo_path,
+                        snapshot,
+                        run_coupling,
                     )
             except Exception:
                 logger.exception("Global phases failed; re-queueing dirty files")

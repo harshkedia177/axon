@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING
 from axon.core.embeddings.text import build_class_method_index, generate_text
 from axon.core.graph.graph import KnowledgeGraph
 from axon.core.graph.model import NodeLabel
-from axon.core.storage.base import EMBEDDING_DIMENSIONS, NodeEmbedding
+from axon.core.storage.base import NodeEmbedding, get_embedding_dimensions
 
 if TYPE_CHECKING:
     from fastembed import TextEmbedding
@@ -104,6 +104,11 @@ _EMBEDDING_BASE_URL = os.environ.get("AXON_EMBEDDING_BASE_URL", "")
 _EMBEDDING_MODEL = os.environ.get("AXON_EMBEDDING_MODEL", "")
 _EMBEDDING_API_KEY = os.environ.get("AXON_EMBEDDING_API_KEY", "unused")
 
+
+def get_effective_embedding_model_name() -> str:
+    return _EMBEDDING_MODEL or _DEFAULT_MODEL
+
+
 # BGE-small max sequence is 512 tokens (~2000 chars). Truncating long
 # descriptions avoids wasting tokenisation and padding time on text that
 # the model would discard anyway.
@@ -143,6 +148,7 @@ def _get_model_cache_clear() -> None:
     """Clear the model cache (used in tests)."""
     with _model_lock:
         _model_cache.clear()
+    get_embedding_dimensions.cache_clear()
 
 
 _get_model.cache_clear = _get_model_cache_clear  # type: ignore[attr-defined]
@@ -160,7 +166,7 @@ EMBEDDABLE_LABELS: frozenset[NodeLabel] = frozenset(
 )
 
 _DEFAULT_MODEL = "nomic-ai/nomic-embed-text-v1.5"
-_DEFAULT_DIMENSIONS = EMBEDDING_DIMENSIONS
+_DEFAULT_DIMENSIONS = get_embedding_dimensions()
 _DEFAULT_BATCH_SIZE = 32
 _MAX_TEXT_CHARS = 8192
 

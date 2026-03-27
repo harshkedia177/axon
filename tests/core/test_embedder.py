@@ -20,7 +20,7 @@ from axon.core.embeddings.embedder import (
 )
 from axon.core.graph.graph import KnowledgeGraph
 from axon.core.graph.model import GraphNode, GraphRelationship, NodeLabel, RelType, generate_id
-from axon.core.storage.base import EMBEDDING_DIMENSIONS, NodeEmbedding
+from axon.core.storage.base import EMBEDDING_DIMENSIONS, NodeEmbedding, get_embedding_dimensions
 
 
 def _vec768(base: list[float] | None = None) -> np.ndarray:
@@ -127,10 +127,37 @@ class TestModelDefaults:
         assert "nomic" in _DEFAULT_MODEL
 
     def test_default_dimensions(self) -> None:
-        assert _DEFAULT_DIMENSIONS == 384
+        assert _DEFAULT_DIMENSIONS == EMBEDDING_DIMENSIONS
 
     def test_default_batch_size(self) -> None:
         assert _DEFAULT_BATCH_SIZE == 32
+
+
+class TestEmbeddingDimensions:
+    def test_remote_bge_large_dimensions_are_inferred(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "AXON_EMBEDDING_BASE_URL": "http://example.test/v1",
+                "AXON_EMBEDDING_MODEL": "BAAI/bge-large-en-v1.5",
+            },
+            clear=False,
+        ):
+            _get_model.cache_clear()
+            assert get_embedding_dimensions() == 1024
+
+    def test_explicit_dimension_override_wins(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "AXON_EMBEDDING_BASE_URL": "http://example.test/v1",
+                "AXON_EMBEDDING_MODEL": "BAAI/bge-large-en-v1.5",
+                "AXON_EMBEDDING_DIMENSIONS": "768",
+            },
+            clear=False,
+        ):
+            _get_model.cache_clear()
+            assert get_embedding_dimensions() == 768
 
 
 class TestEmbeddableLabels:
@@ -683,7 +710,8 @@ class TestRemoteHttpEmbedder:
                     result = embedder.embed_query("test query")
 
                 assert result is not None
-                assert len(result) == EMBEDDING_DIMENSIONS
+                assert len(result) == 1024
+                assert get_embedding_dimensions() == 1024
                 mock_urlopen.assert_called_once()
             finally:
                 embedder._get_model.cache_clear()

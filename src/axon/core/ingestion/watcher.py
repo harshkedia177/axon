@@ -26,6 +26,7 @@ from axon.config.languages import is_supported
 from axon.core.embeddings.embedder import (
     embed_graph,
     embed_nodes,
+    get_effective_embedding_model_name,
 )
 from axon.core.graph.graph import KnowledgeGraph
 from axon.core.graph.model import NodeLabel, RelType

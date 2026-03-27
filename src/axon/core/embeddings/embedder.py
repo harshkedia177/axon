@@ -100,13 +100,21 @@ class _HttpEmbedder:
 _model_cache: dict[str, "TextEmbedding | _HttpEmbedder"] = {}
 _model_lock = threading.Lock()
 
-_EMBEDDING_BASE_URL = os.environ.get("AXON_EMBEDDING_BASE_URL", "")
-_EMBEDDING_MODEL = os.environ.get("AXON_EMBEDDING_MODEL", "")
-_EMBEDDING_API_KEY = os.environ.get("AXON_EMBEDDING_API_KEY", "unused")
+
+def _configured_embedding_base_url() -> str:
+    return os.environ.get("AXON_EMBEDDING_BASE_URL", "").strip()
+
+
+def _configured_embedding_model() -> str:
+    return os.environ.get("AXON_EMBEDDING_MODEL", "").strip()
+
+
+def _configured_embedding_api_key() -> str:
+    return os.environ.get("AXON_EMBEDDING_API_KEY", "unused")
 
 
 def get_effective_embedding_model_name() -> str:
-    return _EMBEDDING_MODEL or _DEFAULT_MODEL
+    return _configured_embedding_model() or _DEFAULT_MODEL
 
 
 # BGE-small max sequence is 512 tokens (~2000 chars). Truncating long
@@ -116,8 +124,12 @@ _MAX_TEXT_CHARS = 2000
 
 
 def _get_model(model_name: str) -> "TextEmbedding | _HttpEmbedder":
-    if _EMBEDDING_BASE_URL and _EMBEDDING_MODEL:
-        cache_key = f"http:{_EMBEDDING_BASE_URL}:{_EMBEDDING_MODEL}"
+    embedding_base_url = _configured_embedding_base_url()
+    embedding_model = _configured_embedding_model()
+    embedding_api_key = _configured_embedding_api_key()
+
+    if embedding_base_url and embedding_model:
+        cache_key = f"http:{embedding_base_url}:{embedding_model}"
         cached = _model_cache.get(cache_key)
         if cached is not None:
             return cached
@@ -125,7 +137,7 @@ def _get_model(model_name: str) -> "TextEmbedding | _HttpEmbedder":
             cached = _model_cache.get(cache_key)
             if cached is not None:
                 return cached
-            model = _HttpEmbedder(_EMBEDDING_BASE_URL, _EMBEDDING_MODEL, _EMBEDDING_API_KEY)
+            model = _HttpEmbedder(embedding_base_url, embedding_model, embedding_api_key)
             _model_cache[cache_key] = model
             return model
 
@@ -232,16 +244,17 @@ def _normalize_embedding_batch(
 def embed_query(
     query: str,
     model_name: str = _DEFAULT_MODEL,
-    dimensions: int = _DEFAULT_DIMENSIONS,
+    dimensions: int | None = None,
 ) -> list[float] | None:
     if not query or not query.strip():
         return None
+    effective_dimensions = dimensions if dimensions is not None else get_embedding_dimensions()
     try:
         model = _get_model(model_name)
         vectors, _ = _normalize_embedding_batch(
             list(model.query_embed(query)),
             expected_count=1,
-            dimensions=dimensions,
+            dimensions=effective_dimensions,
         )
         return vectors[0]
     except Exception:
@@ -276,7 +289,7 @@ def embed_graph(
     graph: KnowledgeGraph,
     model_name: str = _DEFAULT_MODEL,
     batch_size: int = _DEFAULT_BATCH_SIZE,
-    dimensions: int = _DEFAULT_DIMENSIONS,
+    dimensions: int | None = None,
 ) -> list[NodeEmbedding]:
     all_nodes = [n for n in graph.iter_nodes() if n.label in EMBEDDABLE_LABELS]
     if not all_nodes:
@@ -295,7 +308,8 @@ def embed_graph(
     if not texts:
         return []
 
-    return _embed_node_list(nodes, texts, model_name, batch_size, dimensions)
+    effective_dimensions = dimensions if dimensions is not None else get_embedding_dimensions()
+    return _embed_node_list(nodes, texts, model_name, batch_size, effective_dimensions)
 
 
 def embed_nodes(
@@ -303,7 +317,7 @@ def embed_nodes(
     node_ids: set[str],
     model_name: str = _DEFAULT_MODEL,
     batch_size: int = _DEFAULT_BATCH_SIZE,
-    dimensions: int = _DEFAULT_DIMENSIONS,
+    dimensions: int | None = None,
 ) -> list[NodeEmbedding]:
     if not node_ids:
         return []
@@ -325,4 +339,5 @@ def embed_nodes(
     if not texts:
         return []
 
-    return _embed_node_list(valid_nodes, texts, model_name, batch_size, dimensions)
+    effective_dimensions = dimensions if dimensions is not None else get_embedding_dimensions()
+    return _embed_node_list(valid_nodes, texts, model_name, batch_size, effective_dimensions)

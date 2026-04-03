@@ -1,15 +1,22 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from click.exceptions import Exit
 import pytest
+from click.exceptions import Exit
 from typer.testing import CliRunner
 
+import axon.mcp.server as _mcp_server
 from axon import __version__
-from axon.cli.main import _initialize_writable_storage, _register_in_global_registry, app
+from axon.cli.main import (
+    _initialize_writable_storage,
+    _register_in_global_registry,
+    _start_host_background,
+    app,
+)
 
 runner = CliRunner()
 
@@ -249,7 +256,9 @@ class TestDeadCode:
         assert result.exit_code == 1
         assert "No index found" in result.output
 
-    def test_dead_code_with_storage(self, tmp_path: Path, monkeypatch: "pytest.MonkeyPatch") -> None:
+    def test_dead_code_with_storage(
+        self, tmp_path: Path, monkeypatch: "pytest.MonkeyPatch"
+    ) -> None:
         monkeypatch.chdir(tmp_path)
         mock_storage = MagicMock()
         with patch("axon.cli.main._load_storage", return_value=mock_storage):
@@ -324,6 +333,18 @@ class TestMcp:
         assert result.exit_code == 0
         mock_run.assert_called_once()
 
+    def test_accepts_path_argument(self) -> None:
+        """PATH argument appears in mcp --help output."""
+        result = runner.invoke(app, ["mcp", "--help"])
+        assert "PATH" in result.output
+
+    def test_rejects_nonexistent_path(self, tmp_path: Path) -> None:
+        """Non-existent path argument causes exit code 1."""
+        bogus = tmp_path / "no-such-dir"
+        result = runner.invoke(app, ["mcp", str(bogus)])
+        assert result.exit_code == 1
+        assert "not a directory" in result.output
+
 
 class TestServe:
     def test_serve_command_exists(self) -> None:
@@ -339,19 +360,36 @@ class TestServe:
         assert result.exit_code == 0
         mock_run.assert_called_once()
 
-    def test_serve_with_watch_proxies_to_host(self, tmp_path: Path, monkeypatch: "pytest.MonkeyPatch") -> None:
+    def test_serve_with_watch_proxies_to_host(
+        self, tmp_path: Path, monkeypatch: "pytest.MonkeyPatch"
+    ) -> None:
         import asyncio as real_asyncio
 
         monkeypatch.chdir(tmp_path)
         with patch(
             "axon.cli.main._ensure_host_running",
-            return_value={"host_url": "http://127.0.0.1:8420", "mcp_url": "http://127.0.0.1:8420/mcp"},
+            return_value={
+                "host_url": "http://127.0.0.1:8420",
+                "mcp_url": "http://127.0.0.1:8420/mcp",
+            },
         ) as mock_ensure:
             with patch.object(real_asyncio, "run") as mock_run:
                 result = runner.invoke(app, ["serve", "--watch"])
         assert result.exit_code == 0
         mock_ensure.assert_called_once()
         mock_run.assert_called_once()
+
+    def test_accepts_path_argument(self) -> None:
+        """PATH argument appears in serve --help output."""
+        result = runner.invoke(app, ["serve", "--help"])
+        assert "PATH" in result.output
+
+    def test_rejects_nonexistent_path(self, tmp_path: Path) -> None:
+        """Non-existent path argument causes exit code 1."""
+        bogus = tmp_path / "no-such-dir"
+        result = runner.invoke(app, ["serve", str(bogus)])
+        assert result.exit_code == 1
+        assert "not a directory" in result.output
 
 
 class TestHost:
@@ -360,13 +398,30 @@ class TestHost:
         assert result.exit_code == 0
         assert "HTTP MCP" in result.output or "shared" in result.output.lower()
 
+    def test_accepts_path_argument(self) -> None:
+        """PATH argument appears in host --help output."""
+        result = runner.invoke(app, ["host", "--help"])
+        assert "PATH" in result.output
+
+    def test_rejects_nonexistent_path(self, tmp_path: Path) -> None:
+        """Non-existent path argument causes exit code 1."""
+        bogus = tmp_path / "no-such-dir"
+        result = runner.invoke(app, ["host", str(bogus)])
+        assert result.exit_code == 1
+        assert "not a directory" in result.output
+
 
 class TestUi:
-    def test_ui_attaches_to_running_host(self, tmp_path: Path, monkeypatch: "pytest.MonkeyPatch") -> None:
+    def test_ui_attaches_to_running_host(
+        self, tmp_path: Path, monkeypatch: "pytest.MonkeyPatch"
+    ) -> None:
         monkeypatch.chdir(tmp_path)
         with patch(
             "axon.cli.main._get_live_host_info",
-            return_value={"host_url": "http://127.0.0.1:8420", "mcp_url": "http://127.0.0.1:8420/mcp"},
+            return_value={
+                "host_url": "http://127.0.0.1:8420",
+                "mcp_url": "http://127.0.0.1:8420/mcp",
+            },
         ):
             with patch("webbrowser.open") as mock_open:
                 result = runner.invoke(app, ["ui"])
@@ -374,7 +429,9 @@ class TestUi:
         assert "http://127.0.0.1:8420" in result.output
         mock_open.assert_called_once_with("http://127.0.0.1:8420")
 
-    def test_ui_direct_skips_host_attach(self, tmp_path: Path, monkeypatch: "pytest.MonkeyPatch") -> None:
+    def test_ui_direct_skips_host_attach(
+        self, tmp_path: Path, monkeypatch: "pytest.MonkeyPatch"
+    ) -> None:
         monkeypatch.chdir(tmp_path)
         mock_storage = MagicMock()
         with patch("axon.cli.main._get_live_host_info") as mock_host_info:
@@ -432,6 +489,18 @@ class TestWatch:
         result = runner.invoke(app, ["diff", "--help"])
         assert result.exit_code == 0
         assert "branch" in result.output.lower()
+
+    def test_accepts_path_argument(self) -> None:
+        """PATH argument appears in watch --help output."""
+        result = runner.invoke(app, ["watch", "--help"])
+        assert "PATH" in result.output
+
+    def test_rejects_nonexistent_path(self, tmp_path: Path) -> None:
+        """Non-existent path argument causes exit code 1."""
+        bogus = tmp_path / "no-such-dir"
+        result = runner.invoke(app, ["watch", str(bogus)])
+        assert result.exit_code == 1
+        assert "not a directory" in result.output
 
 
 # Multi-repo registry
@@ -538,3 +607,22 @@ class TestRegisterInGlobalRegistry:
             _register_in_global_registry(meta, repo_path)
 
         assert (tmp_path / ".axon" / "repos" / "myapp" / "meta.json").exists()
+
+
+class TestSetDbPath:
+    def test_updates_global(self, monkeypatch: "pytest.MonkeyPatch", tmp_path: Path) -> None:
+        """set_db_path() updates the module-level _db_path global."""
+        monkeypatch.setattr(_mcp_server, "_db_path", None)
+        custom = tmp_path / ".axon" / "kuzu"
+        _mcp_server.set_db_path(custom)
+        assert _mcp_server._db_path == custom
+
+
+class TestStartHostBackground:
+    def test_passes_repo_path_in_command(self, tmp_path: Path) -> None:
+        """_start_host_background() appends repo_path as the final CLI argument."""
+        with patch("subprocess.Popen") as mock_popen, \
+                patch("builtins.open", MagicMock()):
+            _start_host_background(tmp_path, port=8420)
+        cmd = mock_popen.call_args[0][0]
+        assert cmd[-1] == str(tmp_path)

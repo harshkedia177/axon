@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -11,10 +12,13 @@ from axon.core.embeddings.embedder import (
     _DEFAULT_DIMENSIONS,
     _DEFAULT_MODEL,
     _get_model,
+    configure_cuda,
     embed_graph,
     embed_nodes,
     embed_query,
+    validate_cuda,
 )
+from axon.core.embeddings.embedder import _resolve_cuda
 from axon.core.graph.graph import KnowledgeGraph
 from axon.core.graph.model import GraphNode, GraphRelationship, NodeLabel, RelType, generate_id
 from axon.core.storage.base import EMBEDDING_DIMENSIONS, NodeEmbedding
@@ -29,9 +33,11 @@ def _vec768(base: list[float] | None = None) -> np.ndarray:
 
 
 @pytest.fixture(autouse=True)
-def _clear_model_cache():
-    """Clear the lru_cache on _get_model before each test so mocks work."""
+def _clear_model_cache(monkeypatch):
+    """Reset embedding state before each test so mocks work."""
     _get_model.cache_clear()
+    configure_cuda(False)
+    monkeypatch.delenv("AXON_CUDA", raising=False)
     yield
     _get_model.cache_clear()
 
@@ -127,7 +133,7 @@ class TestModelDefaults:
         assert _DEFAULT_DIMENSIONS == 384
 
     def test_default_batch_size(self) -> None:
-        assert _DEFAULT_BATCH_SIZE == 32
+        assert _DEFAULT_BATCH_SIZE == 8
 
 
 class TestEmbeddableLabels:
@@ -154,7 +160,9 @@ class TestEmbeddableLabels:
 
 class TestEmbedGraphBasic:
     @patch("fastembed.TextEmbedding")
-    def test_returns_node_embeddings(self, mock_te_cls: MagicMock, sample_graph: KnowledgeGraph) -> None:
+    def test_returns_node_embeddings(
+        self, mock_te_cls: MagicMock, sample_graph: KnowledgeGraph
+    ) -> None:
         mock_model = MagicMock()
         mock_model.passage_embed.return_value = iter(
             [_vec768([0.1, 0.2, 0.3]), _vec768([0.4, 0.5, 0.6])]
@@ -394,7 +402,10 @@ class TestEmbedGraphTextGeneration:
 
         # The texts list passed to model.passage_embed should contain both texts
         embed_call_args = mock_model.passage_embed.call_args
-        texts_arg = embed_call_args.args[0] if embed_call_args.args else embed_call_args.kwargs.get("documents", [])
+        texts_arg = (
+            embed_call_args.args[0] if embed_call_args.args
+            else embed_call_args.kwargs.get("documents", [])
+        )
         assert "text for foo" in texts_arg
         assert "text for Bar" in texts_arg
 
@@ -427,7 +438,9 @@ class TestEmbedGraphBatchProcessing:
         assert all(len(r.embedding) == EMBEDDING_DIMENSIONS for r in results)
 
     @patch("fastembed.TextEmbedding")
-    def test_default_batch_size_is_32(self, mock_te_cls: MagicMock, sample_graph: KnowledgeGraph) -> None:
+    def test_default_batch_size_is_8(
+        self, mock_te_cls: MagicMock, sample_graph: KnowledgeGraph
+    ) -> None:
         mock_model = MagicMock()
         mock_model.passage_embed.return_value = iter(
             [_vec768([0.1, 0.2, 0.3]), _vec768([0.4, 0.5, 0.6])]
@@ -437,8 +450,8 @@ class TestEmbedGraphBatchProcessing:
         embed_graph(sample_graph)
 
         embed_call = mock_model.passage_embed.call_args
-        assert embed_call.kwargs.get("batch_size") == 32 or (
-            len(embed_call.args) > 1 and embed_call.args[1] == 32
+        assert embed_call.kwargs.get("batch_size") == 8 or (
+            len(embed_call.args) > 1 and embed_call.args[1] == 8
         )
 
 
@@ -623,3 +636,137 @@ class TestEmbedNodes:
         # After Matryoshka truncation, we get first 384 dims of the 768d vector
         expected = _vec768([1.0, 2.0, 3.0])[:384].tolist()
         assert results[0].embedding == pytest.approx(expected)
+
+
+class TestCudaSupport:
+    """CUDA support flag and model initialization tests."""
+
+    def test_cuda_disabled_by_default(self) -> None:
+        """_resolve_cuda returns False with no flag set and no env var."""
+        assert _resolve_cuda() is False
+
+    def test_configure_cuda_sets_flag(self) -> None:
+        """configure_cuda(True) causes _resolve_cuda to return True."""
+        try:
+            configure_cuda(True)
+            assert _resolve_cuda() is True
+        finally:
+            configure_cuda(False)
+
+    def test_axon_cuda_env_var(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """AXON_CUDA=1 env var enables CUDA without calling configure_cuda."""
+        monkeypatch.setenv("AXON_CUDA", "1")
+        assert _resolve_cuda() is True
+
+    @pytest.mark.parametrize(
+        "value, expected",
+        [
+            ("1", True),
+            ("true", True),
+            ("yes", True),
+            ("0", False),
+            ("false", False),
+            ("", False),
+        ],
+    )
+    def test_axon_cuda_env_var_values(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        value: str,
+        expected: bool,
+    ) -> None:
+        """AXON_CUDA env var is recognized only for truthy values."""
+        monkeypatch.setenv("AXON_CUDA", value)
+        assert _resolve_cuda() is expected
+
+    @patch("fastembed.TextEmbedding")
+    def test_get_model_passes_cuda_to_text_embedding(
+        self, mock_te_cls: MagicMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """TextEmbedding is instantiated with cuda=True when AXON_CUDA=1."""
+        monkeypatch.setenv("AXON_CUDA", "1")
+        mock_te_cls.return_value = MagicMock()
+
+        _get_model("test-model")
+
+        _, kwargs = mock_te_cls.call_args
+        assert kwargs.get("cuda") is True
+
+    @patch("fastembed.TextEmbedding")
+    def test_get_model_no_cuda_by_default(
+        self, mock_te_cls: MagicMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """TextEmbedding is instantiated with cuda=False to override auto-detect."""
+        monkeypatch.delenv("AXON_CUDA", raising=False)
+        mock_te_cls.return_value = MagicMock()
+
+        _get_model("test-model")
+
+        _, kwargs = mock_te_cls.call_args
+        assert kwargs.get("cuda") is False
+
+    @patch("fastembed.TextEmbedding")
+    def test_cuda_cache_key_separation(
+        self, mock_te_cls: MagicMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """CUDA and non-CUDA models are cached under separate keys."""
+        monkeypatch.delenv("AXON_CUDA", raising=False)
+        mock_te_cls.return_value = MagicMock()
+
+        _get_model("test-model")
+        try:
+            configure_cuda(True)
+            _get_model("test-model")
+        finally:
+            configure_cuda(False)
+
+        assert mock_te_cls.call_count == 2
+
+    @patch("fastembed.TextEmbedding")
+    def test_cuda_fallback_raises_runtime_error(
+        self, mock_te_cls: MagicMock
+    ) -> None:
+        """RuntimeWarning with CUDAExecutionProvider is re-raised as RuntimeError."""
+        def _emit_cuda_warning(*args: object, **kwargs: object) -> MagicMock:
+            warnings.warn(
+                "CUDAExecutionProvider not available", RuntimeWarning
+            )
+            return MagicMock()
+
+        mock_te_cls.side_effect = _emit_cuda_warning
+        try:
+            configure_cuda(True)
+            with pytest.raises(RuntimeError, match="CUDAExecutionProvider"):
+                _get_model("test-model")
+        finally:
+            configure_cuda(False)
+
+    @patch("fastembed.TextEmbedding")
+    def test_validate_cuda_noop_when_disabled(
+        self, mock_te_cls: MagicMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """validate_cuda does not load the model when CUDA is disabled."""
+        monkeypatch.delenv("AXON_CUDA", raising=False)
+
+        validate_cuda()
+
+        mock_te_cls.assert_not_called()
+
+    @patch("fastembed.TextEmbedding")
+    def test_validate_cuda_raises_on_fallback(
+        self, mock_te_cls: MagicMock
+    ) -> None:
+        """validate_cuda propagates RuntimeError when CUDA provider fails."""
+        def _emit_cuda_warning(*args: object, **kwargs: object) -> MagicMock:
+            warnings.warn(
+                "CUDAExecutionProvider not available", RuntimeWarning
+            )
+            return MagicMock()
+
+        mock_te_cls.side_effect = _emit_cuda_warning
+        try:
+            configure_cuda(True)
+            with pytest.raises(RuntimeError, match="CUDAExecutionProvider"):
+                validate_cuda()
+        finally:
+            configure_cuda(False)

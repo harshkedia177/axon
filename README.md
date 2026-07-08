@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/harshkedia177-axon-badge.png)](https://mseep.ai/app/harshkedia177-axon)
+
 <p align="center">
   <img src="https://raw.githubusercontent.com/harshkedia177/axon/main/axon-logo.png" alt="Axon logo" width="420" />
 </p>

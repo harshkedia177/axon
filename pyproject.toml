@@ -40,7 +40,8 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/harshkedia177/axon"
+Homepage = "https://harshkedia.com/work/axon/"
+Documentation = "https://github.com/harshkedia177/axon#readme"
 Repository = "https://github.com/harshkedia177/axon"
 Issues = "https://github.com/harshkedia177/axon/issues"
 

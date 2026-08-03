@@ -659,6 +659,9 @@ uv run axon ui --dev         # Backend on :8420, proxies to Vite
 
 MIT
 
+<!-- portfolio-link -->
 ---
 
-Built by [@harshkedia177](https://github.com/harshkedia177)
+**[Read the case study →](https://harshkedia.com/work/axon/)** — the design decisions, the trade-offs, and what broke along the way.
+
+Built by [Harsh Kedia](https://harshkedia.com).

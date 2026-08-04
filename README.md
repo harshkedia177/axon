@@ -93,11 +93,16 @@ axon ui                       # 3. Explore visually at localhost:8420
   "mcpServers": {
     "axon": {
       "command": "axon",
-      "args": ["serve", "--watch"]
+      "args": ["serve", "--watch"],
+      "env": {
+        "YDC_API_KEY": "your-youcom-api-key"
+      }
     }
   }
 }
 ```
+
+**Optional Web Search** — set `YDC_API_KEY` to enable the `axon_web_search` tool for finding current documentation, API references, libraries, or practices related to your code. Get an API key at [you.com/platform/api-keys](https://you.com/platform/api-keys). The tool gracefully falls back when the key is not set.
 
 **For developers** — explore the graph yourself:
 

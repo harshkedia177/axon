@@ -9,11 +9,17 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 from collections import deque
+from functools import cached_property
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
+from urllib.error import HTTPError, URLError
 
+from kuzu import Connection
 from axon.core.cypher_guard import WRITE_KEYWORDS, sanitize_cypher
 from axon.core.embeddings.embedder import embed_query
 from axon.core.ingestion.community import export_to_igraph
@@ -1158,3 +1164,111 @@ def handle_test_impact(
                     lines.append(f"    - {test_name} (transitive via: {source_sym})")
 
     return "\n".join(lines)
+
+
+def handle_web_search(query: str, limit: int = 5) -> str:
+    """Search the web using You.com API for current information.
+    
+    Performs a web search to get current information that complements
+    code intelligence analysis. Useful for finding documentation,
+    API references, libraries, or current practices related to code.
+    
+    Args:
+        query: Search query string
+        limit: Maximum number of results to return (default: 5)
+        
+    Returns:
+        Formatted search results with titles, URLs, and snippets
+    """
+    import os
+    import json
+    from urllib.request import Request, urlopen
+    from urllib.parse import urlencode, quote
+    from urllib.error import URLError, HTTPError
+    
+    # Check if API key is available
+    api_key = os.getenv("YDC_API_KEY")
+    if not api_key:
+        return ("Web search unavailable: YDC_API_KEY environment variable not set.\n"
+                "Get an API key at https://you.com/platform/api-keys\n"
+                "Then set: export YDC_API_KEY='***'")
+    
+    # Validate inputs
+    if not query or not query.strip():
+        return "Error: Empty search query provided"
+        
+    if limit < 1 or limit > 20:
+        limit = 5
+        
+    try:
+        # Prepare API request
+        base_url = os.getenv("YDC_BASE_URL", "https://api.you.com")
+        params = {
+            "q": query.strip(),
+            "count": min(limit, 20),
+            "format": "json"
+        }
+        
+        url = f"{base_url}/search?" + urlencode(params)
+        
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "User-Agent": "axon-mcp-tool/1.0",
+            "Accept": "application/json",
+            "Content-Type": "application/json"
+        }
+        
+        # Make request
+        request = Request(url, headers=headers)
+        
+        with urlopen(request, timeout=10) as response:
+            if response.status != 200:
+                return f"Error: Search API returned status {response.status}"
+                
+            data = json.loads(response.read().decode('utf-8'))
+            
+        # Parse and format results
+        results = data.get("results", [])
+        if not results:
+            return f"No search results found for: {query}"
+            
+        lines = [f"Web search results for: {query}\n"]
+        
+        for i, result in enumerate(results[:limit], 1):
+            title = result.get("title", "Untitled")
+            url = result.get("url", "")
+            snippet = result.get("snippet", "No description available")
+            
+            # Clean up snippet - remove extra whitespace
+            snippet = " ".join(snippet.split())
+            if len(snippet) > 150:
+                snippet = snippet[:147] + "..."
+                
+            lines.append(f"{i}. {title}")
+            lines.append(f"   URL: {url}")
+            lines.append(f"   {snippet}")
+            lines.append("")
+            
+        lines.append("Note: Web search results are external data. Verify important information.")
+        
+        return "\n".join(lines)
+        
+    except HTTPError as e:
+        if e.code == 401:
+            return "Error: Invalid API key. Check your YDC_API_KEY environment variable."
+        elif e.code == 403:
+            return "Error: API access forbidden. Check your account permissions."
+        elif e.code == 429:
+            return "Error: Rate limit exceeded. Please try again later."
+        else:
+            return f"Error: HTTP {e.code} - {e.reason}"
+            
+    except URLError as e:
+        return f"Error: Network connection failed - {e.reason}"
+        
+    except json.JSONDecodeError:
+        return "Error: Invalid response format from search API"
+        
+    except Exception as e:
+        logger.error(f"Web search error: {e}")
+        return f"Error: Search request failed - {str(e)}"

@@ -1,6 +1,6 @@
 """MCP server for Axon — exposes code intelligence tools over stdio and HTTP.
 
-Registers fifteen tools and three resources that give AI agents and MCP clients
+Registers sixteen tools and three resources that give AI agents and MCP clients
 access to the Axon knowledge graph.  The server lazily initialises a
 :class:`KuzuBackend` from the ``.axon/kuzu`` directory in the current
 working directory.
@@ -48,6 +48,7 @@ from axon.mcp.tools import (
     handle_query,
     handle_review_risk,
     handle_test_impact,
+    handle_web_search,
 )
 
 logger = logging.getLogger(__name__)
@@ -384,6 +385,27 @@ TOOLS: list[Tool] = [
             },
         },
     ),
+    Tool(
+        name="axon_web_search",
+        description="Search the web for current information using You.com API. Useful for finding documentation, libraries, API references, or current practices related to code.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Search query string",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of results to return (default: 5, max: 20)",
+                    "default": 5,
+                    "minimum": 1,
+                    "maximum": 20,
+                },
+            },
+            "required": ["query"],
+        },
+    ),
 ]
 
 @server.list_tools()
@@ -435,6 +457,11 @@ def _dispatch_tool(name: str, arguments: dict, storage: KuzuBackend) -> str:
     elif name == "axon_cycles":
         return handle_cycles(
             storage, min_size=arguments.get("min_size", 2),
+        )
+    elif name == "axon_web_search":
+        return handle_web_search(
+            arguments.get("query", ""), 
+            limit=arguments.get("limit", 5)
         )
     else:
         return f"Unknown tool: {name}"

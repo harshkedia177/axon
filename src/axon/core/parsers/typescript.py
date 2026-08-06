@@ -112,6 +112,8 @@ class TypeScriptParser(LanguageParser):
             self._maybe_extract_module_exports(node, source, result)
         elif ntype == "method_definition":
             self._extract_method(node, source, result)
+        elif ntype in ("jsx_element", "jsx_self_closing_element"):
+            self._extract_jsx_usage(node, source, result)
 
         for child in node.children:
             self._walk(child, source, result, visited)
@@ -553,6 +555,52 @@ class TypeScriptParser(LanguageParser):
                         arguments=arguments,
                     )
                 )
+
+    def _extract_jsx_usage(
+        self, node: Node, source: str, result: ParseResult
+    ) -> None:
+        """Extract JSX element usage as a call to the component function/class.
+
+        Handles both ``<Foo />`` (self-closing) and ``<Foo>...</Foo>``
+        (opening + closing).  Only upper-case tag names are emitted — lower-case
+        tags (``<div>``, ``<span>``) are native HTML and skipped.
+
+        Dotted components like ``<Ns.Component />`` are emitted with the
+        first segment as ``receiver`` and the second as ``name``.
+        """
+        line = node.start_point[0] + 1
+
+        # For jsx_element, drill into the opening tag to find the name.
+        target_node = node
+        if node.type == "jsx_element":
+            for child in node.children:
+                if child.type == "jsx_opening_element":
+                    target_node = child
+                    break
+
+        # Find the tag name (identifier or member_expression).
+        name_node: Node | None = None
+        for child in target_node.children:
+            if child.type in ("identifier", "member_expression"):
+                name_node = child
+                break
+
+        if name_node is None:
+            return
+
+        tag_text = name_node.text.decode()
+
+        # Skip native HTML tags (lowercase first character).
+        if not tag_text or (tag_text[0].islower() and "." not in tag_text):
+            return
+
+        if "." in tag_text:
+            receiver, _, method = tag_text.partition(".")
+            result.calls.append(
+                CallInfo(name=method, line=line, receiver=receiver)
+            )
+        else:
+            result.calls.append(CallInfo(name=tag_text, line=line))
 
     @staticmethod
     def _extract_identifier_arguments(call_node: Node) -> list[str]:

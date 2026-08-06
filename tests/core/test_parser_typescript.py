@@ -12,6 +12,10 @@ def ts_parser() -> TypeScriptParser:
 @pytest.fixture
 def js_parser() -> TypeScriptParser:
     return TypeScriptParser(dialect="javascript")
+
+@pytest.fixture
+def tsx_parser() -> TypeScriptParser:
+    return TypeScriptParser(dialect="tsx")
 def test_parse_ts_function_declaration(ts_parser: TypeScriptParser) -> None:
     code = """\
 function greet(name: string): string {
@@ -284,3 +288,88 @@ module.exports = { Foo, Bar };
 
     assert "Foo" in result.exports
     assert "Bar" in result.exports
+
+
+# ── JSX / TSX tests ────────────────────────────────────────────────────
+
+
+def test_jsx_self_closing_element(tsx_parser: TypeScriptParser) -> None:
+    """Self-closing JSX tags like ``<Foo />`` should produce a CallInfo."""
+    code = """\
+const App = () => <SelectField />;
+"""
+    result = tsx_parser.parse(code, "app.tsx")
+
+    call_names = [c.name for c in result.calls]
+    assert "SelectField" in call_names
+
+
+def test_jsx_opening_closing_element(tsx_parser: TypeScriptParser) -> None:
+    """Paired JSX tags like ``<Foo>...</Foo>`` should produce a CallInfo."""
+    code = """\
+const App = () => <Container>hello</Container>;
+"""
+    result = tsx_parser.parse(code, "app.tsx")
+
+    call_names = [c.name for c in result.calls]
+    assert "Container" in call_names
+
+
+def test_jsx_skips_html_tags(tsx_parser: TypeScriptParser) -> None:
+    """Native HTML tags (lowercase) should NOT produce a CallInfo."""
+    code = """\
+const App = () => <div><span>hi</span></div>;
+"""
+    result = tsx_parser.parse(code, "app.tsx")
+
+    call_names = [c.name for c in result.calls]
+    assert "div" not in call_names
+    assert "span" not in call_names
+
+
+def test_jsx_dotted_component(tsx_parser: TypeScriptParser) -> None:
+    """Dotted components like ``<Form.Input />`` emit receiver + name."""
+    code = """\
+const App = () => <Form.Input />;
+"""
+    result = tsx_parser.parse(code, "app.tsx")
+
+    dotted_calls = [c for c in result.calls if c.name == "Input"]
+    assert len(dotted_calls) == 1
+    assert dotted_calls[0].receiver == "Form"
+
+
+def test_jsx_nested_components(tsx_parser: TypeScriptParser) -> None:
+    """Multiple nested JSX components should each produce a CallInfo."""
+    code = """\
+const Page = () => (
+    <Layout>
+        <Header />
+        <Content>
+            <Sidebar />
+        </Content>
+    </Layout>
+);
+"""
+    result = tsx_parser.parse(code, "page.tsx")
+
+    call_names = [c.name for c in result.calls]
+    assert "Layout" in call_names
+    assert "Header" in call_names
+    assert "Content" in call_names
+    assert "Sidebar" in call_names
+
+
+def test_jsx_mixed_with_function_calls(tsx_parser: TypeScriptParser) -> None:
+    """JSX calls and regular function calls should coexist."""
+    code = """\
+const App = () => {
+    const data = fetchData();
+    return <Dashboard items={data} />;
+};
+"""
+    result = tsx_parser.parse(code, "app.tsx")
+
+    call_names = [c.name for c in result.calls]
+    assert "fetchData" in call_names
+    assert "Dashboard" in call_names

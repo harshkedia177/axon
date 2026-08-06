@@ -32,12 +32,12 @@ from axon import __version__
 from axon.core.diff import diff_branches, format_diff
 from axon.core.embeddings.embedder import _DEFAULT_MODEL
 from axon.core.ingestion.pipeline import PipelineResult, run_pipeline
-from axon.core.storage.base import EMBEDDING_DIMENSIONS
 from axon.core.ingestion.watcher import ensure_current_embeddings, watch_repo
+from axon.core.storage.base import EMBEDDING_DIMENSIONS
 from axon.core.storage.kuzu_backend import KuzuBackend
 from axon.mcp import tools as mcp_tools
 from axon.mcp.server import main as mcp_main
-from axon.mcp.server import set_lock, set_storage
+from axon.mcp.server import set_db_path, set_lock, set_storage
 from axon.runtime import AxonRuntime
 from axon.web import app as web_app_module
 
@@ -49,6 +49,7 @@ DEFAULT_MANAGED_PORT = 8421
 UPDATE_CHECK_INTERVAL_SECONDS = 60 * 60 * 24
 UPDATE_CHECK_URL = "https://pypi.org/pypi/axoniq/json"
 UPDATE_CHECK_SKIP_COMMANDS = {"mcp", "serve", "host"}
+
 
 def _load_storage(repo_path: Path | None = None) -> "KuzuBackend":  # noqa: F821
     target = (repo_path or Path.cwd()).resolve()
@@ -357,6 +358,7 @@ def _start_host_background(
         command.append("--no-watch")
     if managed:
         command.append("--managed")
+    command.append(str(repo_path))  # Explicit path argument
     with open(os.devnull, "wb") as devnull:
         subprocess.Popen(  # noqa: S603
             command,
@@ -397,10 +399,12 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 
+
 def _version_callback(value: bool) -> None:
     if value:
         console.print(f"Axon v{__version__}")
         raise typer.Exit()
+
 
 @app.callback()
 def main(
@@ -432,7 +436,8 @@ def _initialize_writable_storage(
 
     if not auto_index and not _has_existing_index(axon_dir, db_path):
         console.print(
-            "[red]Error:[/red] No index found. Run [cyan]axon analyze .[/cyan] first to index this codebase."
+            "[red]Error:[/red] No index found. "
+            "Run [cyan]axon analyze .[/cyan] first to index this codebase."
         )
         raise typer.Exit(code=1)
 
@@ -473,6 +478,7 @@ async def _proxy_stdio_to_http_mcp(mcp_url: str) -> None:
 
 def _run_shared_host(
     *,
+    repo_path: Path,
     port: int,
     bind: str,
     no_open: bool,
@@ -487,7 +493,6 @@ def _run_shared_host(
     auto_index: bool = True,
 ) -> None:
     """Run the shared Axon host with configurable UX messaging."""
-    repo_path = Path.cwd().resolve()
     live_host = _get_live_host_info(repo_path)
     if live_host is not None:
         console.print(already_running_message.format(url=live_host["host_url"]))
@@ -582,6 +587,7 @@ def _run_shared_host(
         _clear_host_meta(repo_path)
         storage.close()
 
+
 def _run_background_embeddings(
     graph: "KnowledgeGraph",
     db_path: Path,
@@ -607,7 +613,8 @@ def _run_background_embeddings(
 
         if bg_result.embeddings > 0:
             console.print(
-                f"[dim]Background embeddings complete: {bg_result.embeddings} vectors generated.[/dim]"
+                f"[dim]Background embeddings complete: "
+                f"{bg_result.embeddings} vectors generated.[/dim]"
             )
     except Exception:
         logger.warning("Background embedding failed — semantic search unavailable", exc_info=True)
@@ -618,9 +625,13 @@ def _run_background_embeddings(
 @app.command()
 def analyze(
     path: Path = typer.Argument(Path("."), help="Path to the repository to index."),
-    no_embeddings: bool = typer.Option(False, "--no-embeddings", help="Skip vector embedding generation."),
+    no_embeddings: bool = typer.Option(
+        False, "--no-embeddings", help="Skip vector embedding generation."
+    ),
     foreground_embeddings: bool = typer.Option(
-        False, "--foreground-embeddings", help="Generate embeddings synchronously instead of in the background.",
+        False,
+        "--foreground-embeddings",
+        help="Generate embeddings synchronously instead of in the background.",
     ),
 ) -> None:
     """Index a repository into a knowledge graph."""
@@ -703,6 +714,7 @@ def analyze(
     if not no_embeddings and not run_embeddings_inline:
         embed_thread.join()
 
+
 @app.command()
 def status() -> None:
     """Show index status for current repository."""
@@ -711,7 +723,8 @@ def status() -> None:
 
     if not meta_path.exists():
         console.print(
-            "[red]Error:[/red] No index found. Run [cyan]axon analyze .[/cyan] first to index this codebase."
+            "[red]Error:[/red] No index found. "
+            "Run [cyan]axon analyze .[/cyan] first to index this codebase."
         )
         raise typer.Exit(code=1)
 
@@ -734,11 +747,13 @@ def status() -> None:
     if stats.get("coupled_pairs", 0) > 0:
         console.print(f"  Coupled pairs:  {stats['coupled_pairs']}")
 
+
 @app.command(name="list")
 def list_repos() -> None:
     """List all indexed repositories."""
     result = mcp_tools.handle_list_repos()
     console.print(result)
+
 
 @app.command()
 def clean(
@@ -763,6 +778,7 @@ def clean(
     shutil.rmtree(axon_dir)
     console.print(f"[green]Deleted[/green] {axon_dir}")
 
+
 @app.command()
 def query(
     q: str = typer.Argument(..., help="Search query for the knowledge graph."),
@@ -774,6 +790,7 @@ def query(
     console.print(result)
     storage.close()
 
+
 @app.command()
 def context(
     name: str = typer.Argument(..., help="Symbol name to inspect."),
@@ -783,6 +800,7 @@ def context(
     result = mcp_tools.handle_context(storage, name)
     console.print(result)
     storage.close()
+
 
 @app.command()
 def impact(
@@ -795,6 +813,7 @@ def impact(
     console.print(result)
     storage.close()
 
+
 @app.command(name="dead-code")
 def dead_code() -> None:
     """List all detected dead code."""
@@ -802,6 +821,7 @@ def dead_code() -> None:
     result = mcp_tools.handle_dead_code(storage)
     console.print(result)
     storage.close()
+
 
 @app.command()
 def cypher(
@@ -812,6 +832,7 @@ def cypher(
     result = mcp_tools.handle_cypher(storage, query)
     console.print(result)
     storage.close()
+
 
 @app.command()
 def setup(
@@ -838,32 +859,18 @@ def setup(
 
     console.print("\n[dim]Then index your codebase with:[/dim] [cyan]axon analyze .[/cyan]")
 
+
 @app.command()
-def watch() -> None:
+def watch(
+    path: Path = typer.Argument(Path("."), help="Path to the repository to watch."),
+) -> None:
     """Watch mode — re-index on file changes."""
-    repo_path = Path.cwd().resolve()
-    axon_dir = repo_path / ".axon"
-    axon_dir.mkdir(parents=True, exist_ok=True)
-    db_path = axon_dir / "kuzu"
-
-    storage = KuzuBackend()
-    storage.initialize(db_path)
-
-    if not (axon_dir / "meta.json").exists():
-        console.print("[bold]Running initial index...[/bold]")
-        _, result = run_pipeline(repo_path, storage)
-        meta = _build_meta(result, repo_path)
-        meta_path = axon_dir / "meta.json"
-        meta_path.write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
-        try:
-            _register_in_global_registry(meta, repo_path)
-        except Exception:
-            logger.debug("Failed to register repo in global registry", exc_info=True)
-    else:
-        ensure_current_embeddings(storage, repo_path)
-
+    repo_path = path.resolve()
+    if not repo_path.is_dir():
+        console.print(f"[red]Error:[/red] {repo_path} is not a directory.")
+        raise typer.Exit(code=1)
+    storage, axon_dir, db_path = _initialize_writable_storage(repo_path)
     console.print(f"[bold]Watching[/bold] {repo_path} for changes (Ctrl+C to stop)")
-
     try:
         asyncio.run(watch_repo(repo_path, storage))
     except KeyboardInterrupt:
@@ -871,9 +878,12 @@ def watch() -> None:
     finally:
         storage.close()
 
+
 @app.command()
 def diff(
-    branch_range: str = typer.Argument(..., help="Branch range for comparison (e.g. main..feature)."),
+    branch_range: str = typer.Argument(
+        ..., help="Branch range for comparison (e.g. main..feature)."
+    ),
 ) -> None:
     """Structural branch comparison."""
     repo_path = Path.cwd().resolve()
@@ -885,23 +895,43 @@ def diff(
 
     console.print(format_diff(result))
 
+
 @app.command()
-def mcp() -> None:
+def mcp(
+    path: Path = typer.Argument(Path("."), help="Path to the repository."),
+) -> None:
     """Start MCP server (stdio transport)."""
+    repo_path = path.resolve()
+    if not repo_path.is_dir():
+        console.print(f"[red]Error:[/red] {repo_path} is not a directory.")
+        raise typer.Exit(code=1)
+    set_db_path(repo_path / ".axon" / "kuzu")
     asyncio.run(mcp_main())
 
 
 @app.command()
 def host(
-    port: int = typer.Option(DEFAULT_PORT, "--port", "-p", help="Port to serve UI and HTTP MCP on."),
-    bind: str = typer.Option(DEFAULT_HOST, "--bind", help="Host interface to bind the shared host to."),
+    path: Path = typer.Argument(Path("."), help="Path to the repository to host."),
+    port: int = typer.Option(
+        DEFAULT_PORT, "--port", "-p", help="Port to serve UI and HTTP MCP on."
+    ),
+    bind: str = typer.Option(
+        DEFAULT_HOST, "--bind", help="Host interface to bind the shared host to."
+    ),
     no_open: bool = typer.Option(False, "--no-open", help="Don't auto-open browser."),
-    watch: bool = typer.Option(True, "--watch/--no-watch", help="Enable file watching with auto-reindex."),
+    watch: bool = typer.Option(
+        True, "--watch/--no-watch", help="Enable file watching with auto-reindex."
+    ),
     dev: bool = typer.Option(False, "--dev", help="Proxy to Vite dev server for HMR."),
     managed: bool = typer.Option(False, "--managed", hidden=True),
 ) -> None:
     """Run the shared Axon host for UI and multi-session HTTP MCP clients."""
+    repo_path = path.resolve()
+    if not repo_path.is_dir():
+        console.print(f"[red]Error:[/red] {repo_path} is not a directory.")
+        raise typer.Exit(code=1)
     _run_shared_host(
+        repo_path=repo_path,
         port=port,
         bind=bind,
         no_open=no_open,
@@ -915,16 +945,24 @@ def host(
         already_running_message="[yellow]Axon host already running[/yellow] at {url}",
     )
 
+
 @app.command()
 def serve(
-    watch: bool = typer.Option(False, "--watch", "-w", help="Enable file watching with auto-reindex."),
+    path: Path = typer.Argument(Path("."), help="Path to the repository to serve."),
+    watch: bool = typer.Option(
+        False, "--watch", "-w", help="Enable file watching with auto-reindex."
+    ),
 ) -> None:
     """Start MCP server, optionally with live file watching."""
+    repo_path = path.resolve()
+    if not repo_path.is_dir():
+        console.print(f"[red]Error:[/red] {repo_path} is not a directory.")
+        raise typer.Exit(code=1)
+    set_db_path(repo_path / ".axon" / "kuzu")
     if not watch:
         asyncio.run(mcp_main())
         return
 
-    repo_path = Path.cwd().resolve()
     lease_path: Path | None = None
     try:
         live_host = _ensure_host_running(
@@ -979,6 +1017,7 @@ def ui(
             return
 
         _run_shared_host(
+            repo_path=repo_path,
             port=port,
             bind=DEFAULT_HOST,
             no_open=no_open,

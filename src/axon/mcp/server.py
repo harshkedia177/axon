@@ -79,6 +79,16 @@ def set_lock(lock: asyncio.Lock) -> None:
     _lock = lock
 
 
+def set_db_path(path: Path) -> None:
+    """Inject a custom database path for standalone MCP server mode.
+
+    Must be called before the server handles any tool requests (i.e., before
+    entering the event loop in ``main()``).
+    """
+    global _db_path  # noqa: PLW0603
+    _db_path = path
+
+
 @contextmanager
 def _open_storage() -> Iterator[KuzuBackend]:
     """Open a short-lived read-only connection for a single tool/resource call.
@@ -179,7 +189,9 @@ TOOLS: list[Tool] = [
                 },
                 "depth": {
                     "type": "integer",
-                    "description": f"Maximum traversal depth (default 3, max {MAX_TRAVERSE_DEPTH}).",
+                    "description": (
+                        f"Maximum traversal depth (default 3, max {MAX_TRAVERSE_DEPTH})."
+                    ),
                     "default": 3,
                     "minimum": 1,
                     "maximum": MAX_TRAVERSE_DEPTH,
@@ -386,10 +398,12 @@ TOOLS: list[Tool] = [
     ),
 ]
 
+
 @server.list_tools()
 async def list_tools() -> list[Tool]:
     """Return the list of available Axon tools."""
     return TOOLS
+
 
 def _dispatch_tool(name: str, arguments: dict, storage: KuzuBackend) -> str:
     if name == "axon_list_repos":
@@ -451,6 +465,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
     return [TextContent(type="text", text=result)]
 
+
 @server.list_resources()
 async def list_resources() -> list[Resource]:
     """Return the list of available Axon resources."""
@@ -475,6 +490,7 @@ async def list_resources() -> list[Resource]:
         ),
     ]
 
+
 def _dispatch_resource(uri_str: str, storage: KuzuBackend) -> str:
     if uri_str == "axon://overview":
         return get_overview(storage)
@@ -491,6 +507,7 @@ async def read_resource(uri) -> str:
     uri_str = str(uri)
     return await _with_storage(lambda st: _dispatch_resource(uri_str, st))
 
+
 async def main() -> None:
     """Run the Axon MCP server over stdio transport."""
     async with stdio_server() as (read, write):
@@ -501,6 +518,7 @@ def create_streamable_http_app() -> tuple[StreamableHTTPSessionManager, Streamab
     """Create a streamable HTTP transport for the existing MCP server."""
     session_manager = StreamableHTTPSessionManager(app=server)
     return session_manager, StreamableHTTPASGIApp(session_manager)
+
 
 if __name__ == "__main__":
     asyncio.run(main())

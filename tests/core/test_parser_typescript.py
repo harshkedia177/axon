@@ -9,9 +9,12 @@ from axon.core.parsers.typescript import TypeScriptParser
 def ts_parser() -> TypeScriptParser:
     return TypeScriptParser(dialect="typescript")
 
+
 @pytest.fixture
 def js_parser() -> TypeScriptParser:
     return TypeScriptParser(dialect="javascript")
+
+
 def test_parse_ts_function_declaration(ts_parser: TypeScriptParser) -> None:
     code = """\
 function greet(name: string): string {
@@ -28,6 +31,8 @@ function greet(name: string): string {
     assert fn.start_line == 1
     assert fn.end_line == 3
     assert "function greet" in fn.content
+
+
 def test_parse_arrow_function_with_types(ts_parser: TypeScriptParser) -> None:
     code = """\
 const validate = (user: User): boolean => {
@@ -50,6 +55,8 @@ const validate = (user: User): boolean => {
     assert len(user_refs) == 1
     assert user_refs[0].kind == "param"
     assert user_refs[0].param_name == "user"
+
+
 def test_parse_class_with_heritage(ts_parser: TypeScriptParser) -> None:
     code = """\
 class Admin extends User implements Serializable {
@@ -77,6 +84,8 @@ class Admin extends User implements Serializable {
     this_calls = [c for c in result.calls if c.receiver == "this"]
     assert len(this_calls) == 1
     assert this_calls[0].name == "validate"
+
+
 def test_parse_interface(ts_parser: TypeScriptParser) -> None:
     code = """\
 interface AuthConfig {
@@ -91,6 +100,8 @@ interface AuthConfig {
     assert interfaces[0].name == "AuthConfig"
     assert interfaces[0].start_line == 1
     assert interfaces[0].end_line == 4
+
+
 def test_parse_type_alias(ts_parser: TypeScriptParser) -> None:
     code = """\
 type UserId = string | number;
@@ -100,6 +111,8 @@ type UserId = string | number;
     type_aliases = [s for s in result.symbols if s.kind == "type_alias"]
     assert len(type_aliases) == 1
     assert type_aliases[0].name == "UserId"
+
+
 def test_parse_imports(ts_parser: TypeScriptParser) -> None:
     code = """\
 import { User, Admin } from './models';
@@ -126,6 +139,8 @@ import express from 'express';
     default = [i for i in result.imports if i.module == "express"][0]
     assert default.names == ["express"]
     assert default.is_relative is False
+
+
 def test_parse_javascript(js_parser: TypeScriptParser) -> None:
     code = """\
 function hello(name) {
@@ -151,9 +166,12 @@ const foo = require('./bar');
     log_calls = [c for c in result.calls if c.name == "log"]
     assert len(log_calls) == 1
     assert log_calls[0].receiver == "console"
+
+
 def test_invalid_dialect_raises() -> None:
     with pytest.raises(ValueError, match="Unknown dialect"):
         TypeScriptParser(dialect="coffeescript")
+
 
 def test_empty_source(ts_parser: TypeScriptParser) -> None:
     result = ts_parser.parse("", "empty.ts")
@@ -161,6 +179,7 @@ def test_empty_source(ts_parser: TypeScriptParser) -> None:
     assert result.imports == []
     assert result.calls == []
     assert result.type_refs == []
+
 
 def test_interface_extends_heritage(ts_parser: TypeScriptParser) -> None:
     code = """\
@@ -174,6 +193,7 @@ interface Foo extends Bar {
     assert len(interfaces) == 1
     assert ("Foo", "extends", "Bar") in result.heritage
 
+
 def test_function_expression(js_parser: TypeScriptParser) -> None:
     code = """\
 const add = function(a, b) { return a + b; };
@@ -184,6 +204,7 @@ const add = function(a, b) { return a + b; };
     assert len(functions) == 1
     assert functions[0].name == "add"
 
+
 def test_variable_type_annotation(ts_parser: TypeScriptParser) -> None:
     code = """\
 const config: AppConfig = getConfig();
@@ -193,6 +214,7 @@ const config: AppConfig = getConfig();
     var_types = [t for t in result.type_refs if t.kind == "variable"]
     assert len(var_types) == 1
     assert var_types[0].name == "AppConfig"
+
 
 def test_return_type_ref(ts_parser: TypeScriptParser) -> None:
     code = """\
@@ -205,6 +227,8 @@ function getUser(): UserModel {
     return_types = [t for t in result.type_refs if t.kind == "return"]
     assert len(return_types) == 1
     assert return_types[0].name == "UserModel"
+
+
 def test_new_expression_simple(js_parser: TypeScriptParser) -> None:
     code = """\
 function init() {
@@ -218,6 +242,7 @@ function init() {
     assert new_calls[0].line == 2
     assert new_calls[0].receiver == ""
 
+
 def test_new_expression_with_member(ts_parser: TypeScriptParser) -> None:
     code = """\
 const db = new pg.Client();
@@ -228,6 +253,7 @@ const db = new pg.Client();
     assert len(new_calls) == 1
     assert new_calls[0].receiver == "pg"
 
+
 def test_new_expression_callback_args(js_parser: TypeScriptParser) -> None:
     code = """\
 const watcher = new FileWatcher(onChange);
@@ -237,6 +263,7 @@ const watcher = new FileWatcher(onChange);
     new_calls = [c for c in result.calls if c.name == "FileWatcher"]
     assert len(new_calls) == 1
     assert "onChange" in new_calls[0].arguments
+
 
 def test_new_expression_cookie_clicker_pattern(js_parser: TypeScriptParser) -> None:
     """Real-world pattern: exported class instantiated with ``new``."""
@@ -265,6 +292,8 @@ export class Game {
     check_calls = [c for c in result.calls if c.name == "check"]
     assert len(check_calls) == 1
     assert "achievementManager" in check_calls[0].receiver
+
+
 def test_module_exports_identifier(js_parser: TypeScriptParser) -> None:
     code = """\
 class AchievementManager {}
@@ -273,6 +302,7 @@ module.exports = AchievementManager;
     result = js_parser.parse(code, "achievements.js")
 
     assert "AchievementManager" in result.exports
+
 
 def test_module_exports_object(js_parser: TypeScriptParser) -> None:
     code = """\
@@ -284,3 +314,109 @@ module.exports = { Foo, Bar };
 
     assert "Foo" in result.exports
     assert "Bar" in result.exports
+
+
+def test_assignment_target_extracted_ts(ts_parser: TypeScriptParser) -> None:
+    code = "const user = createUser();\n"
+    result = ts_parser.parse(code, "test.ts")
+    calls = [c for c in result.calls if c.name == "createUser"]
+    assert len(calls) == 1
+    assert calls[0].assignment_target == "user"
+
+
+def test_variable_annotation_name_extracted_ts(ts_parser: TypeScriptParser) -> None:
+    code = "const config: AppConfig = getConfig();\n"
+    result = ts_parser.parse(code, "test.ts")
+    var_refs = [t for t in result.type_refs if t.kind == "variable"]
+    assert len(var_refs) == 1
+    assert var_refs[0].name == "AppConfig"
+    assert var_refs[0].variable_name == "config"
+
+
+def test_func_ref_ts_assignment(ts_parser: TypeScriptParser) -> None:
+    code = "const handler = myFunc;\n"
+    result = ts_parser.parse(code, "test.ts")
+    assert len(result.func_refs) == 1
+    assert result.func_refs[0].name == "myFunc"
+    assert result.func_refs[0].target_var == "handler"
+
+
+def test_func_ref_ts_constant_ignored(ts_parser: TypeScriptParser) -> None:
+    code = "const X = SOME_CONSTANT;\n"
+    result = ts_parser.parse(code, "test.ts")
+    assert len(result.func_refs) == 0
+
+
+@pytest.fixture
+def tsx_parser() -> TypeScriptParser:
+    return TypeScriptParser(dialect="tsx")
+
+
+def test_jsx_self_closing_element_creates_call(tsx_parser: TypeScriptParser) -> None:
+    code = """\
+const App = () => {
+  return <Header title="Dashboard" />;
+};
+"""
+    result = tsx_parser.parse(code, "app.tsx")
+    calls = [c for c in result.calls if c.name == "Header"]
+    assert len(calls) == 1
+    assert calls[0].line == 2
+
+
+def test_jsx_opening_element_creates_call(tsx_parser: TypeScriptParser) -> None:
+    code = """\
+const App = () => {
+  return <Button>Click</Button>;
+};
+"""
+    result = tsx_parser.parse(code, "app.tsx")
+    calls = [c for c in result.calls if c.name == "Button"]
+    assert len(calls) == 1
+
+
+def test_jsx_skips_intrinsic_elements(tsx_parser: TypeScriptParser) -> None:
+    code = """\
+const App = () => {
+  return <div><span>text</span></div>;
+};
+"""
+    result = tsx_parser.parse(code, "app.tsx")
+    # No calls for lowercase HTML elements.
+    assert len(result.calls) == 0
+
+
+def test_jsx_callback_prop_creates_func_ref(tsx_parser: TypeScriptParser) -> None:
+    code = """\
+const App = () => {
+  return <Button onClick={handleClick} />;
+};
+"""
+    result = tsx_parser.parse(code, "app.tsx")
+    calls = [c for c in result.calls if c.name == "Button"]
+    assert len(calls) == 1
+    refs = [f for f in result.func_refs if f.name == "handleClick"]
+    assert len(refs) == 1
+
+
+def test_jsx_member_expression_component(tsx_parser: TypeScriptParser) -> None:
+    code = """\
+const App = () => {
+  return <Icons.Check />;
+};
+"""
+    result = tsx_parser.parse(code, "app.tsx")
+    calls = [c for c in result.calls if c.name == "Check"]
+    assert len(calls) == 1
+    assert calls[0].receiver == "Icons"
+
+
+def test_export_default_identifier(tsx_parser: TypeScriptParser) -> None:
+    code = """\
+const HomePage = () => {
+  return <div>Hello</div>;
+};
+export default HomePage;
+"""
+    result = tsx_parser.parse(code, "page.tsx")
+    assert "HomePage" in result.exports

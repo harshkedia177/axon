@@ -14,6 +14,7 @@ from tree_sitter import Language, Node, Parser
 
 from axon.core.parsers.base import (
     CallInfo,
+    FuncRef,
     ImportInfo,
     LanguageParser,
     ParseResult,
@@ -46,6 +47,7 @@ _BUILTIN_TYPES: frozenset[str] = frozenset(
     }
 )
 
+
 class TypeScriptParser(LanguageParser):
     """Parse TypeScript, TSX, or JavaScript files via tree-sitter.
 
@@ -56,8 +58,7 @@ class TypeScriptParser(LanguageParser):
     def __init__(self, dialect: str = "typescript") -> None:
         if dialect not in _DIALECT_MAP:
             raise ValueError(
-                f"Unknown dialect {dialect!r}. "
-                f"Expected one of: {', '.join(sorted(_DIALECT_MAP))}"
+                f"Unknown dialect {dialect!r}. Expected one of: {', '.join(sorted(_DIALECT_MAP))}"
             )
         self.dialect = dialect
         self._language = _DIALECT_MAP[dialect]
@@ -112,13 +113,13 @@ class TypeScriptParser(LanguageParser):
             self._maybe_extract_module_exports(node, source, result)
         elif ntype == "method_definition":
             self._extract_method(node, source, result)
+        elif ntype in ("jsx_self_closing_element", "jsx_opening_element"):
+            self._extract_jsx_call(node, source, result)
 
         for child in node.children:
             self._walk(child, source, result, visited)
 
-    def _extract_export(
-        self, node: Node, source: str, result: ParseResult
-    ) -> None:
+    def _extract_export(self, node: Node, source: str, result: ParseResult) -> None:
         """Handle ``export`` statements — mark exported symbol names.
 
         Handles ``export function foo()``, ``export class Bar``,
@@ -147,10 +148,11 @@ class TypeScriptParser(LanguageParser):
                         name_node = spec.child_by_field_name("name")
                         if name_node is not None:
                             result.exports.append(name_node.text.decode())
+            elif child.type == "identifier":
+                # export default SomeName
+                result.exports.append(child.text.decode())
 
-    def _maybe_extract_module_exports(
-        self, node: Node, source: str, result: ParseResult
-    ) -> None:
+    def _maybe_extract_module_exports(self, node: Node, source: str, result: ParseResult) -> None:
         """Handle ``module.exports = X``, ``module.exports = { A, B }``,
         and ``exports.name = fn`` / ``module.exports.name = fn``."""
         for child in node.children:
@@ -209,9 +211,7 @@ class TypeScriptParser(LanguageParser):
                 )
                 self._extract_function_types(func_node, sym_name, result)
 
-    def _extract_function_declaration(
-        self, node: Node, source: str, result: ParseResult
-    ) -> None:
+    def _extract_function_declaration(self, node: Node, source: str, result: ParseResult) -> None:
         name_node = node.child_by_field_name("name")
         if name_node is None:
             return
@@ -264,9 +264,7 @@ class TypeScriptParser(LanguageParser):
 
         self._extract_function_types(node, name, result)
 
-    def _extract_variable_declaration(
-        self, node: Node, source: str, result: ParseResult
-    ) -> None:
+    def _extract_variable_declaration(self, node: Node, source: str, result: ParseResult) -> None:
         """Handle arrow functions, function expressions, and require() calls."""
         for child in node.children:
             if child.type != "variable_declarator":
@@ -283,6 +281,17 @@ class TypeScriptParser(LanguageParser):
                 self._extract_assigned_function(child, var_name, value_node, result)
             elif value_node.type == "call_expression":
                 self._maybe_extract_require(child, var_name, value_node, result)
+            elif value_node.type == "identifier":
+                # First-class function reference: const handler = myFunc
+                ref_name = value_node.text.decode()
+                if not ref_name.startswith("_") and not ref_name.isupper():
+                    result.func_refs.append(
+                        FuncRef(
+                            name=ref_name,
+                            line=value_node.start_point[0] + 1,
+                            target_var=var_name,
+                        )
+                    )
 
             self._extract_variable_type_annotation(child, result)
 
@@ -392,7 +401,9 @@ class TypeScriptParser(LanguageParser):
                     elif sub.type == "generic_type":
                         name_node = sub.child_by_field_name("name")
                         if name_node is not None:
-                            result.heritage.append((class_name, "implements", name_node.text.decode()))
+                            result.heritage.append(
+                                (class_name, "implements", name_node.text.decode()),
+                            )
 
     def _extract_interface(self, node: Node, source: str, result: ParseResult) -> None:
         name_node = node.child_by_field_name("name")
@@ -494,6 +505,31 @@ class TypeScriptParser(LanguageParser):
             )
         )
 
+    @staticmethod
+    def _find_assignment_target(call_node: Node) -> str:
+        """Find the variable name if this call is the RHS of an assignment."""
+        parent = call_node.parent
+        if parent is None:
+            return ""
+        # const x = Foo() -> variable_declarator
+        if parent.type == "variable_declarator":
+            name_node = parent.child_by_field_name("name")
+            if name_node is not None and name_node.type == "identifier":
+                return name_node.text.decode()
+        # x = Foo() -> assignment_expression
+        if parent.type == "assignment_expression":
+            left = parent.child_by_field_name("left")
+            if left is not None and left.type == "identifier":
+                return left.text.decode()
+        # Handle await: const x = await Foo()
+        if parent.type == "await_expression":
+            grandparent = parent.parent
+            if grandparent is not None and grandparent.type == "variable_declarator":
+                name_node = grandparent.child_by_field_name("name")
+                if name_node is not None and name_node.type == "identifier":
+                    return name_node.text.decode()
+        return ""
+
     def _extract_call(self, node: Node, source: str, result: ParseResult) -> None:
         func_node = node.child_by_field_name("function")
         if func_node is None:
@@ -501,6 +537,7 @@ class TypeScriptParser(LanguageParser):
 
         line = node.start_point[0] + 1
         arguments = self._extract_identifier_arguments(node)
+        assignment_target = self._find_assignment_target(node)
 
         if func_node.type == "member_expression":
             obj_node = func_node.child_by_field_name("object")
@@ -513,17 +550,23 @@ class TypeScriptParser(LanguageParser):
                         line=line,
                         receiver=receiver,
                         arguments=arguments,
+                        assignment_target=assignment_target,
                     )
                 )
         elif func_node.type == "identifier":
             name = func_node.text.decode()
             # Skip require() since it's handled as an import.
             if name != "require":
-                result.calls.append(CallInfo(name=name, line=line, arguments=arguments))
+                result.calls.append(
+                    CallInfo(
+                        name=name,
+                        line=line,
+                        arguments=arguments,
+                        assignment_target=assignment_target,
+                    )
+                )
 
-    def _extract_new_expression(
-        self, node: Node, source: str, result: ParseResult
-    ) -> None:
+    def _extract_new_expression(self, node: Node, source: str, result: ParseResult) -> None:
         """Handle ``new ClassName(args)`` — emit a CallInfo targeting the class."""
         constructor_node = node.child_by_field_name("constructor")
         if constructor_node is None:
@@ -554,6 +597,61 @@ class TypeScriptParser(LanguageParser):
                     )
                 )
 
+    def _extract_jsx_call(self, node: Node, source: str, result: ParseResult) -> None:
+        """Handle JSX elements like ``<MyComponent />`` — emit a CallInfo.
+
+        Only emits for user-defined components (PascalCase names), not
+        HTML intrinsic elements like ``<div>``, ``<span>``, etc.
+        """
+        # The component name is the first identifier child.
+        for child in node.children:
+            if child.type in ("identifier", "member_expression"):
+                name = child.text.decode()
+                # Skip HTML intrinsic elements (lowercase).
+                if name[0].islower():
+                    return
+                line = node.start_point[0] + 1
+                # For member expressions like <Ns.Component />, split receiver.
+                if child.type == "member_expression":
+                    obj = child.child_by_field_name("object")
+                    prop = child.child_by_field_name("property")
+                    if prop is not None:
+                        receiver = obj.text.decode() if obj else ""
+                        result.calls.append(
+                            CallInfo(name=prop.text.decode(), line=line, receiver=receiver)
+                        )
+                else:
+                    result.calls.append(CallInfo(name=name, line=line))
+                # Also extract callback props as func refs.
+                self._extract_jsx_callback_props(node, result)
+                return
+
+    @staticmethod
+    def _extract_jsx_callback_props(node: Node, result: ParseResult) -> None:
+        """Extract callback props like ``onClick={handleClick}`` as func refs."""
+        for child in node.children:
+            if child.type != "jsx_attribute":
+                continue
+            # jsx_attribute has children: property_identifier, jsx_expression
+            value_node = None
+            for sub in child.children:
+                if sub.type == "jsx_expression":
+                    value_node = sub
+                    break
+            if value_node is None:
+                continue
+            # Check if the expression is a bare identifier (not a call or arrow).
+            for expr_child in value_node.children:
+                if expr_child.type == "identifier":
+                    ref_name = expr_child.text.decode()
+                    if not ref_name.startswith("_") and not ref_name.isupper():
+                        result.func_refs.append(
+                            FuncRef(
+                                name=ref_name,
+                                line=expr_child.start_point[0] + 1,
+                            )
+                        )
+
     @staticmethod
     def _extract_identifier_arguments(call_node: Node) -> list[str]:
         """Extract bare identifier arguments from a call_expression node."""
@@ -567,9 +665,7 @@ class TypeScriptParser(LanguageParser):
                 identifiers.append(child.text.decode())
         return identifiers
 
-    def _extract_function_types(
-        self, func_node: Node, func_name: str, result: ParseResult
-    ) -> None:
+    def _extract_function_types(self, func_node: Node, func_name: str, result: ParseResult) -> None:
         """Extract parameter types and return type from a function-like node."""
         params = func_node.child_by_field_name("parameters")
         if params is None:
@@ -620,10 +716,13 @@ class TypeScriptParser(LanguageParser):
                         )
                     )
 
-    def _extract_variable_type_annotation(
-        self, declarator_node: Node, result: ParseResult
-    ) -> None:
+    def _extract_variable_type_annotation(self, declarator_node: Node, result: ParseResult) -> None:
         """Extract type from ``const x: Config = ...``."""
+        var_name = ""
+        name_node = declarator_node.child_by_field_name("name")
+        if name_node is not None and name_node.type == "identifier":
+            var_name = name_node.text.decode()
+
         for child in declarator_node.children:
             if child.type == "type_annotation":
                 type_name = self._type_annotation_name(child)
@@ -633,6 +732,7 @@ class TypeScriptParser(LanguageParser):
                             name=type_name,
                             kind="variable",
                             line=child.start_point[0] + 1,
+                            variable_name=var_name,
                         )
                     )
 

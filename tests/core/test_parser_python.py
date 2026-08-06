@@ -15,10 +15,7 @@ def parser() -> PythonParser:
 
 
 class TestParseSimpleFunction:
-    CODE = (
-        'def greet(name: str) -> str:\n'
-        '    return f"Hello, {name}"\n'
-    )
+    CODE = 'def greet(name: str) -> str:\n    return f"Hello, {name}"\n'
 
     def test_symbol_count(self, parser: PythonParser) -> None:
         result = parser.parse(self.CODE, "test.py")
@@ -124,11 +121,7 @@ class TestParseInheritance:
 
 
 class TestParseImports:
-    CODE = (
-        "import os\n"
-        "from os.path import join\n"
-        "from ..models import User\n"
-    )
+    CODE = "import os\nfrom os.path import join\nfrom ..models import User\n"
 
     def test_import_count(self, parser: PythonParser) -> None:
         result = parser.parse(self.CODE, "test.py")
@@ -186,12 +179,7 @@ class TestParseImports:
 
 
 class TestParseFunctionCalls:
-    CODE = (
-        "def process():\n"
-        "    result = validate(data)\n"
-        "    user.save()\n"
-        '    print("done")\n'
-    )
+    CODE = 'def process():\n    result = validate(data)\n    user.save()\n    print("done")\n'
 
     def test_simple_call(self, parser: PythonParser) -> None:
         result = parser.parse(self.CODE, "test.py")
@@ -211,11 +199,7 @@ class TestParseFunctionCalls:
         assert len(print_calls) == 1
 
     def test_self_method_call(self, parser: PythonParser) -> None:
-        code = (
-            "class Foo:\n"
-            "    def run(self):\n"
-            "        self.validate()\n"
-        )
+        code = "class Foo:\n    def run(self):\n        self.validate()\n"
         result = parser.parse(code, "test.py")
         validate_calls = [c for c in result.calls if c.name == "validate"]
         assert len(validate_calls) == 1
@@ -300,11 +284,7 @@ class TestEdgeCases:
         assert isinstance(result, ParseResult)
 
     def test_nested_function(self, parser: PythonParser) -> None:
-        code = (
-            "def outer():\n"
-            "    def inner():\n"
-            "        pass\n"
-        )
+        code = "def outer():\n    def inner():\n        pass\n"
         result = parser.parse(code, "test.py")
         names = {s.name for s in result.symbols}
         assert "outer" in names
@@ -315,12 +295,7 @@ class TestEdgeCases:
         assert inner[0].kind == "function"
 
     def test_decorator_does_not_affect_parsing(self, parser: PythonParser) -> None:
-        code = (
-            "class Service:\n"
-            "    @staticmethod\n"
-            "    def create() -> None:\n"
-            "        pass\n"
-        )
+        code = "class Service:\n    @staticmethod\n    def create() -> None:\n        pass\n"
         result = parser.parse(code, "test.py")
         methods = [s for s in result.symbols if s.kind == "method"]
         assert len(methods) == 1
@@ -333,40 +308,23 @@ class TestEdgeCases:
 
 class TestParseDecorators:
     def test_simple_decorator(self, parser: PythonParser) -> None:
-        code = (
-            "@staticmethod\n"
-            "def create() -> None:\n"
-            "    pass\n"
-        )
+        code = "@staticmethod\ndef create() -> None:\n    pass\n"
         result = parser.parse(code, "test.py")
         assert len(result.symbols) == 1
         assert result.symbols[0].decorators == ["staticmethod"]
 
     def test_dotted_decorator(self, parser: PythonParser) -> None:
-        code = (
-            "@app.route\n"
-            "def index():\n"
-            "    pass\n"
-        )
+        code = "@app.route\ndef index():\n    pass\n"
         result = parser.parse(code, "test.py")
         assert result.symbols[0].decorators == ["app.route"]
 
     def test_decorator_with_call(self, parser: PythonParser) -> None:
-        code = (
-            "@server.list_tools()\n"
-            "async def list_tools():\n"
-            "    return []\n"
-        )
+        code = "@server.list_tools()\nasync def list_tools():\n    return []\n"
         result = parser.parse(code, "test.py")
         assert result.symbols[0].decorators == ["server.list_tools"]
 
     def test_multiple_decorators(self, parser: PythonParser) -> None:
-        code = (
-            "@staticmethod\n"
-            "@cache\n"
-            "def compute():\n"
-            "    pass\n"
-        )
+        code = "@staticmethod\n@cache\ndef compute():\n    pass\n"
         result = parser.parse(code, "test.py")
         assert result.symbols[0].decorators == ["staticmethod", "cache"]
 
@@ -376,12 +334,7 @@ class TestParseDecorators:
         assert result.symbols[0].decorators == []
 
     def test_decorated_method_in_class(self, parser: PythonParser) -> None:
-        code = (
-            "class Service:\n"
-            "    @staticmethod\n"
-            "    def create() -> None:\n"
-            "        pass\n"
-        )
+        code = "class Service:\n    @staticmethod\n    def create() -> None:\n        pass\n"
         result = parser.parse(code, "test.py")
         methods = [s for s in result.symbols if s.kind == "method"]
         assert len(methods) == 1
@@ -391,12 +344,84 @@ class TestParseDecorators:
         assert classes[0].decorators == []
 
     def test_decorated_class(self, parser: PythonParser) -> None:
-        code = (
-            "@dataclass\n"
-            "class Config:\n"
-            "    name: str\n"
-        )
+        code = "@dataclass\nclass Config:\n    name: str\n"
         result = parser.parse(code, "test.py")
         classes = [s for s in result.symbols if s.kind == "class"]
         assert len(classes) == 1
         assert classes[0].decorators == ["dataclass"]
+
+
+class TestAssignmentTarget:
+    """Tests for CallInfo.assignment_target extraction."""
+
+    def test_simple_assignment(self, parser: PythonParser) -> None:
+        code = "user = User()\n"
+        result = parser.parse(code, "test.py")
+        calls = [c for c in result.calls if c.name == "User"]
+        assert len(calls) == 1
+        assert calls[0].assignment_target == "user"
+
+    def test_no_assignment(self, parser: PythonParser) -> None:
+        code = "User()\n"
+        result = parser.parse(code, "test.py")
+        calls = [c for c in result.calls if c.name == "User"]
+        assert len(calls) == 1
+        assert calls[0].assignment_target == ""
+
+    def test_annotated_assignment(self, parser: PythonParser) -> None:
+        code = "user: User = get_user()\n"
+        result = parser.parse(code, "test.py")
+        calls = [c for c in result.calls if c.name == "get_user"]
+        assert len(calls) == 1
+        # Annotated assignment in Python uses a different AST node,
+        # but the call is still extracted
+        # The assignment target may or may not be detected depending on AST structure
+
+    def test_await_assignment(self, parser: PythonParser) -> None:
+        code = "async def main():\n    user = await get_user()\n"
+        result = parser.parse(code, "test.py")
+        calls = [c for c in result.calls if c.name == "get_user"]
+        assert len(calls) == 1
+        assert calls[0].assignment_target == "user"
+
+
+class TestVariableAnnotationName:
+    def test_variable_name_extracted(self, parser: PythonParser) -> None:
+        code = "user: User = get_user()\n"
+        result = parser.parse(code, "test.py")
+        var_refs = [t for t in result.type_refs if t.kind == "variable"]
+        assert len(var_refs) == 1
+        assert var_refs[0].name == "User"
+        assert var_refs[0].variable_name == "user"
+
+
+class TestFuncRefExtraction:
+    """Tests for first-class function reference extraction."""
+
+    def test_simple_func_ref(self, parser: PythonParser) -> None:
+        code = "handler = my_func\n"
+        result = parser.parse(code, "test.py")
+        assert len(result.func_refs) == 1
+        assert result.func_refs[0].name == "my_func"
+        assert result.func_refs[0].target_var == "handler"
+
+    def test_constant_ignored(self, parser: PythonParser) -> None:
+        code = "X = SOME_CONSTANT\n"
+        result = parser.parse(code, "test.py")
+        assert len(result.func_refs) == 0
+
+    def test_private_ignored(self, parser: PythonParser) -> None:
+        code = "x = _private\n"
+        result = parser.parse(code, "test.py")
+        assert len(result.func_refs) == 0
+
+    def test_call_not_func_ref(self, parser: PythonParser) -> None:
+        code = "result = my_func()\n"
+        result = parser.parse(code, "test.py")
+        # This is a call, not a func ref
+        assert len(result.func_refs) == 0
+
+    def test_literal_not_func_ref(self, parser: PythonParser) -> None:
+        code = 'name = "hello"\n'
+        result = parser.parse(code, "test.py")
+        assert len(result.func_refs) == 0

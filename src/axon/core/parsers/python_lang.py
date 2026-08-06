@@ -11,6 +11,7 @@ from tree_sitter import Language, Node, Parser
 
 from axon.core.parsers.base import (
     CallInfo,
+    FuncRef,
     ImportInfo,
     LanguageParser,
     ParseResult,
@@ -39,6 +40,7 @@ _BUILTIN_TYPES: frozenset[str] = frozenset(
         "type",
     }
 )
+
 
 class PythonParser(LanguageParser):
     """Parses Python source code using tree-sitter."""
@@ -369,22 +371,55 @@ class PythonParser(LanguageParser):
             )
         )
 
+    @staticmethod
+    def _try_extract_func_ref(assignment_node: Node, result: ParseResult) -> None:
+        """Detect ``handler = my_func`` and emit a FuncRef.
+
+        Filters out constants (ALL_CAPS) and private names (``_...``).
+        Only emits when the RHS is a bare identifier (not a call, literal, etc.).
+        """
+        left = assignment_node.child_by_field_name("left")
+        right = assignment_node.child_by_field_name("right")
+        if left is None or right is None:
+            return
+        if left.type != "identifier" or right.type != "identifier":
+            return
+        name = right.text.decode("utf8")
+        # Filter constants (ALL_CAPS) and private names
+        if name.startswith("_") or name.isupper():
+            return
+        target_var = left.text.decode("utf8")
+        result.func_refs.append(
+            FuncRef(
+                name=name,
+                line=right.start_point[0] + 1,
+                target_var=target_var,
+            )
+        )
+
     def _extract_annotations_from_expression(
         self,
         node: Node,
         result: ParseResult,
     ) -> None:
-        """Extract variable annotations and __all__ from an expression_statement."""
+        """Extract variable annotations, __all__, and func refs from an expression_statement."""
         for child in node.children:
             if child.type == "assignment":
                 self._try_extract_variable_annotation(child, result)
                 self._try_extract_all_exports(child, result)
+                self._try_extract_func_ref(child, result)
 
     def _try_extract_variable_annotation(self, assignment_node: Node, result: ParseResult) -> None:
         """Extract a type reference from a variable annotation if present."""
         type_node = assignment_node.child_by_field_name("type")
         if type_node is None:
             return
+
+        # Extract the variable name from the left side of the assignment.
+        var_name = ""
+        left = assignment_node.child_by_field_name("left")
+        if left is not None and left.type == "identifier":
+            var_name = left.text.decode("utf8")
 
         type_name = self._extract_type_name(type_node)
         if type_name and type_name not in _BUILTIN_TYPES:
@@ -393,6 +428,7 @@ class PythonParser(LanguageParser):
                     name=type_name,
                     kind="variable",
                     line=type_node.start_point[0] + 1,
+                    variable_name=var_name,
                 )
             )
 
@@ -414,7 +450,7 @@ class PythonParser(LanguageParser):
                 # Strip surrounding quotes (single, double, or triple).
                 for quote in ('"""', "'''", '"', "'"):
                     if text.startswith(quote) and text.endswith(quote):
-                        text = text[len(quote):-len(quote)]
+                        text = text[len(quote) : -len(quote)]
                         break
                 if text:
                     result.exports.append(text)
@@ -489,6 +525,24 @@ class PythonParser(LanguageParser):
         for child in node.children:
             self._extract_calls_recursive(child, result)
 
+    @staticmethod
+    def _find_assignment_target(call_node: Node) -> str:
+        """Find the variable name if this call is the RHS of an assignment.
+
+        Handles ``x = Foo()``, ``x: T = Foo()``, and ``x = await Foo()``.
+        """
+        parent = call_node.parent
+        # Handle ``x = await Foo()``
+        if parent is not None and parent.type == "await":
+            parent = parent.parent
+        if parent is None:
+            return ""
+        if parent.type == "assignment":
+            left = parent.child_by_field_name("left")
+            if left is not None and left.type == "identifier":
+                return left.text.decode("utf8")
+        return ""
+
     def _extract_call(self, call_node: Node, result: ParseResult) -> None:
         """Extract a single call node into a CallInfo."""
         func_node = call_node.child_by_field_name("function")
@@ -503,6 +557,7 @@ class PythonParser(LanguageParser):
 
         line = call_node.start_point[0] + 1
         arguments = self._extract_identifier_arguments(call_node)
+        assignment_target = self._find_assignment_target(call_node)
 
         if func_node.type == "identifier":
             result.calls.append(
@@ -510,6 +565,7 @@ class PythonParser(LanguageParser):
                     name=func_node.text.decode("utf8"),
                     line=line,
                     arguments=arguments,
+                    assignment_target=assignment_target,
                 )
             )
         elif func_node.type == "attribute":
@@ -520,6 +576,7 @@ class PythonParser(LanguageParser):
                     line=line,
                     receiver=receiver,
                     arguments=arguments,
+                    assignment_target=assignment_target,
                 )
             )
 

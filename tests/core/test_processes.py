@@ -42,6 +42,7 @@ def _add_function(
     graph.add_node(node)
     return node
 
+
 def _add_call(
     graph: KnowledgeGraph,
     source: GraphNode,
@@ -60,6 +61,7 @@ def _add_call(
         )
     )
 
+
 def _add_member_of(
     graph: KnowledgeGraph,
     node: GraphNode,
@@ -76,12 +78,14 @@ def _add_member_of(
         )
     )
 
+
 # Fixture: call graph
 #
 #   main() --> validate() --> hash_password()
 #                         \-> query_db() --> format_result()
 #
 #   orphan_func() <-- (has incoming call from some_caller)
+
 
 @pytest.fixture()
 def graph() -> KnowledgeGraph:
@@ -111,6 +115,8 @@ def graph() -> KnowledgeGraph:
     _add_call(g, some_caller, orphan_func)
 
     return g
+
+
 class TestFindEntryPoints:
     def test_find_entry_points(self, graph: KnowledgeGraph) -> None:
         entry_points = find_entry_points(graph)
@@ -126,6 +132,8 @@ class TestFindEntryPoints:
         entry_points = find_entry_points(graph)
         for ep in entry_points:
             assert ep.is_entry_point is True
+
+
 class TestFindEntryPointsFramework:
     def test_test_function_is_entry_point(self) -> None:
         g = KnowledgeGraph()
@@ -164,6 +172,8 @@ class TestFindEntryPointsFramework:
         entry_points = find_entry_points(g)
         ep_names = {n.name for n in entry_points}
         assert "handler" in ep_names
+
+
 class TestTraceFlow:
     def test_trace_flow(self, graph: KnowledgeGraph) -> None:
         main_id = generate_id(NodeLabel.FUNCTION, "src/app.py", "main")
@@ -190,6 +200,8 @@ class TestTraceFlow:
 
         flow = trace_flow(a, g)
         assert len(flow) == 2  # a, b -- no revisit
+
+
 class TestTraceFlowMaxDepth:
     def test_trace_flow_max_depth(self, graph: KnowledgeGraph) -> None:
         main_id = generate_id(NodeLabel.FUNCTION, "src/app.py", "main")
@@ -205,6 +217,8 @@ class TestTraceFlowMaxDepth:
         # Depth-2 nodes should NOT appear.
         assert "hash_password" not in flow_names
         assert "query_db" not in flow_names
+
+
 class TestGenerateProcessLabel:
     def test_generate_process_label(self) -> None:
         nodes = [
@@ -224,6 +238,8 @@ class TestGenerateProcessLabel:
 
     def test_generate_process_label_empty(self) -> None:
         assert generate_process_label([]) == ""
+
+
 class TestDeduplicateFlows:
     def test_deduplicate_flows(self) -> None:
         # Create nodes.
@@ -250,10 +266,10 @@ class TestDeduplicateFlows:
 
         result = deduplicate_flows([flow1, flow2])
         assert len(result) == 2
+
+
 class TestProcessProcessesCreatesNodes:
-    def test_process_processes_creates_nodes(
-        self, graph: KnowledgeGraph
-    ) -> None:
+    def test_process_processes_creates_nodes(self, graph: KnowledgeGraph) -> None:
         process_processes(graph)
 
         process_nodes = graph.get_nodes_by_label(NodeLabel.PROCESS)
@@ -263,10 +279,10 @@ class TestProcessProcessesCreatesNodes:
         for pn in process_nodes:
             assert pn.name != ""
             assert pn.properties["step_count"] > 1
+
+
 class TestProcessProcessesCreatesSteps:
-    def test_process_processes_creates_steps(
-        self, graph: KnowledgeGraph
-    ) -> None:
+    def test_process_processes_creates_steps(self, graph: KnowledgeGraph) -> None:
         process_processes(graph)
 
         step_rels = graph.get_relationships_by_type(RelType.STEP_IN_PROCESS)
@@ -281,17 +297,108 @@ class TestProcessProcessesCreatesSteps:
         process_nodes = graph.get_nodes_by_label(NodeLabel.PROCESS)
         for pn in process_nodes:
             incoming = graph.get_incoming(pn.id, RelType.STEP_IN_PROCESS)
-            step_numbers = sorted(
-                r.properties["step_number"] for r in incoming
-            )
+            step_numbers = sorted(r.properties["step_number"] for r in incoming)
             assert step_numbers[0] == 0
             assert step_numbers == list(range(len(step_numbers)))
+
+
 class TestProcessProcessesReturnsCount:
-    def test_process_processes_returns_count(
-        self, graph: KnowledgeGraph
-    ) -> None:
+    def test_process_processes_returns_count(self, graph: KnowledgeGraph) -> None:
         count = process_processes(graph)
 
         process_nodes = graph.get_nodes_by_label(NodeLabel.PROCESS)
         assert count == len(process_nodes)
         assert count > 0
+
+
+class TestAlembicEntryPoints:
+    def test_upgrade_in_migration_is_entry_point(self) -> None:
+        g = KnowledgeGraph()
+        _add_function(
+            g,
+            "upgrade",
+            file_path="alembic/versions/abc123_add_table.py",
+            language="python",
+        )
+        entry_points = find_entry_points(g)
+        ep_names = {n.name for n in entry_points}
+        assert "upgrade" in ep_names
+
+    def test_downgrade_in_migration_is_entry_point(self) -> None:
+        g = KnowledgeGraph()
+        _add_function(
+            g,
+            "downgrade",
+            file_path="migrations/versions/abc123.py",
+            language="python",
+        )
+        entry_points = find_entry_points(g)
+        ep_names = {n.name for n in entry_points}
+        assert "downgrade" in ep_names
+
+
+class TestAlembicNonMigrationNotEntryPoint:
+    def test_upgrade_outside_migration_not_entry_point(self) -> None:
+        g = KnowledgeGraph()
+        _add_function(
+            g,
+            "upgrade",
+            file_path="src/utils.py",
+            language="python",
+        )
+        entry_points = find_entry_points(g)
+        ep_names = {n.name for n in entry_points}
+        assert "upgrade" not in ep_names
+
+
+class TestFastAPIVerbsAreEntryPoints:
+    def test_fastapi_get_is_entry_point(self) -> None:
+        g = KnowledgeGraph()
+        _add_function(
+            g,
+            "get_users",
+            content='@app.get("/users")\ndef get_users():\n    pass',
+            language="python",
+        )
+        entry_points = find_entry_points(g)
+        ep_names = {n.name for n in entry_points}
+        assert "get_users" in ep_names
+
+    def test_fastapi_post_is_entry_point(self) -> None:
+        g = KnowledgeGraph()
+        _add_function(
+            g,
+            "create_user",
+            content='@app.post("/users")\ndef create_user():\n    pass',
+            language="python",
+        )
+        entry_points = find_entry_points(g)
+        ep_names = {n.name for n in entry_points}
+        assert "create_user" in ep_names
+
+
+class TestNextjsDataFetchingIsEntryPoint:
+    def test_get_server_side_props_is_entry_point(self) -> None:
+        g = KnowledgeGraph()
+        _add_function(
+            g,
+            "getServerSideProps",
+            file_path="src/pages/index.tsx",
+            language="typescript",
+            is_exported=True,
+        )
+        entry_points = find_entry_points(g)
+        ep_names = {n.name for n in entry_points}
+        assert "getServerSideProps" in ep_names
+
+    def test_generate_static_params_is_entry_point(self) -> None:
+        g = KnowledgeGraph()
+        _add_function(
+            g,
+            "generateStaticParams",
+            file_path="src/app/[id]/page.tsx",
+            language="typescript",
+        )
+        entry_points = find_entry_points(g)
+        ep_names = {n.name for n in entry_points}
+        assert "generateStaticParams" in ep_names

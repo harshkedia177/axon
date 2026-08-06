@@ -51,38 +51,154 @@ _KIND_TO_LABEL: dict[str, NodeLabel] = {
 # stdlib utilities, framework hooks, and common JS/TS globals whose definitions
 # do not exist in the user's codebase.  Filtering them before resolution
 # prevents low-confidence global-fuzzy matches against short, common names.
-_CALL_BLOCKLIST: frozenset[str] = frozenset({
-    # Python builtins
-    "print", "len", "range", "map", "filter", "sorted", "list", "dict",
-    "set", "str", "int", "float", "bool", "type", "super", "isinstance",
-    "issubclass", "hasattr", "getattr", "setattr", "open", "iter", "next",
-    "zip", "enumerate", "any", "all", "min", "max", "sum", "abs", "round",
-    "repr", "id", "hash", "dir", "vars", "input", "format", "tuple",
-    "frozenset", "bytes", "bytearray", "memoryview", "object", "property",
-    "classmethod", "staticmethod", "delattr", "callable", "compile", "eval",
-    "exec", "globals", "locals", "breakpoint", "exit", "quit",
-    # Python stdlib — common method names that collide with user-defined symbols
-    "append", "extend", "update", "pop", "get", "items", "keys", "values",
-    "split", "join", "strip", "replace", "startswith", "endswith", "lower",
-    "upper", "encode", "decode", "read", "write", "close",
-    # JS/TS built-in globals
-    "console", "setTimeout", "setInterval", "clearTimeout", "clearInterval",
-    "JSON", "Array", "Object", "Promise", "Math", "Date", "Error", "Symbol",
-    "parseInt", "parseFloat", "isNaN", "isFinite", "encodeURIComponent",
-    "decodeURIComponent", "fetch", "require", "exports", "module",
-    "document", "window", "process", "Buffer", "URL",
-    # JS/TS dotted method names extracted as bare call names
-    "log", "error", "warn", "info", "debug",
-    "parse", "stringify",
-    "assign", "freeze",
-    "isArray", "from", "of",
-    "resolve", "reject", "race",
-    "floor", "ceil", "random",
-    # React hooks
-    "useState", "useEffect", "useRef", "useCallback", "useMemo",
-    "useContext", "useReducer", "useLayoutEffect", "useImperativeHandle",
-    "useDebugValue", "useId", "useTransition", "useDeferredValue",
-})
+_CALL_BLOCKLIST: frozenset[str] = frozenset(
+    {
+        # Python builtins
+        "print",
+        "len",
+        "range",
+        "map",
+        "filter",
+        "sorted",
+        "list",
+        "dict",
+        "set",
+        "str",
+        "int",
+        "float",
+        "bool",
+        "type",
+        "super",
+        "isinstance",
+        "issubclass",
+        "hasattr",
+        "getattr",
+        "setattr",
+        "open",
+        "iter",
+        "next",
+        "zip",
+        "enumerate",
+        "any",
+        "all",
+        "min",
+        "max",
+        "sum",
+        "abs",
+        "round",
+        "repr",
+        "id",
+        "hash",
+        "dir",
+        "vars",
+        "input",
+        "format",
+        "tuple",
+        "frozenset",
+        "bytes",
+        "bytearray",
+        "memoryview",
+        "object",
+        "property",
+        "classmethod",
+        "staticmethod",
+        "delattr",
+        "callable",
+        "compile",
+        "eval",
+        "exec",
+        "globals",
+        "locals",
+        "breakpoint",
+        "exit",
+        "quit",
+        # Python stdlib — common method names that collide with user-defined symbols
+        "append",
+        "extend",
+        "update",
+        "pop",
+        "get",
+        "items",
+        "keys",
+        "values",
+        "split",
+        "join",
+        "strip",
+        "replace",
+        "startswith",
+        "endswith",
+        "lower",
+        "upper",
+        "encode",
+        "decode",
+        "read",
+        "write",
+        "close",
+        # JS/TS built-in globals
+        "console",
+        "setTimeout",
+        "setInterval",
+        "clearTimeout",
+        "clearInterval",
+        "JSON",
+        "Array",
+        "Object",
+        "Promise",
+        "Math",
+        "Date",
+        "Error",
+        "Symbol",
+        "parseInt",
+        "parseFloat",
+        "isNaN",
+        "isFinite",
+        "encodeURIComponent",
+        "decodeURIComponent",
+        "fetch",
+        "require",
+        "exports",
+        "module",
+        "document",
+        "window",
+        "process",
+        "Buffer",
+        "URL",
+        # JS/TS dotted method names extracted as bare call names
+        "log",
+        "error",
+        "warn",
+        "info",
+        "debug",
+        "parse",
+        "stringify",
+        "assign",
+        "freeze",
+        "isArray",
+        "from",
+        "of",
+        "resolve",
+        "reject",
+        "race",
+        "floor",
+        "ceil",
+        "random",
+        # React hooks
+        "useState",
+        "useEffect",
+        "useRef",
+        "useCallback",
+        "useMemo",
+        "useContext",
+        "useReducer",
+        "useLayoutEffect",
+        "useImperativeHandle",
+        "useDebugValue",
+        "useId",
+        "useTransition",
+        "useDeferredValue",
+    }
+)
+
 
 def resolve_call(
     call: CallInfo,
@@ -139,7 +255,9 @@ def resolve_call(
         if node is not None and node.file_path == file_path:
             return nid, 1.0
 
-    effective_cache = import_cache if import_cache is not None else _build_import_cache(file_path, graph)
+    effective_cache = (
+        import_cache if import_cache is not None else _build_import_cache(file_path, graph)
+    )
     imported_target = _resolve_via_imports(name, candidate_ids, graph, effective_cache)
     if imported_target is not None:
         return imported_target, 1.0
@@ -147,6 +265,7 @@ def resolve_call(
     if len(candidate_ids) > 5:
         return None, 0.0
     return _pick_closest(candidate_ids, graph, caller_file_path=file_path), 0.5
+
 
 def _resolve_self_method(
     method_name: str,
@@ -164,16 +283,13 @@ def _resolve_self_method(
     fallback: str | None = None
     for nid in call_index.get(method_name, []):
         node = graph.get_node(nid)
-        if (
-            node is not None
-            and node.label == NodeLabel.METHOD
-            and node.file_path == file_path
-        ):
+        if node is not None and node.label == NodeLabel.METHOD and node.file_path == file_path:
             if caller_class_name and node.class_name == caller_class_name:
                 return nid
             if fallback is None:
                 fallback = nid
     return fallback
+
 
 def _build_import_cache(
     file_path: str,
@@ -225,6 +341,7 @@ def _resolve_via_imports(
             return nid
 
     return None
+
 
 def _common_prefix_len(a: str, b: str) -> int:
     """Return the length of the common directory prefix between two paths."""
@@ -295,13 +412,20 @@ def _resolve_receiver_method(
     file_path: str,
     call_index: dict[str, list[str]],
     graph: KnowledgeGraph,
+    type_table: dict[str, dict[str, str]] | None = None,
 ) -> ResolvedEdge | None:
     """Resolve ``Receiver.method()`` to the METHOD node and return a ResolvedEdge.
 
     Looks for a METHOD node whose ``name`` matches *method_name* and whose
-    ``class_name`` matches *receiver*.  Searches same-file first, then
-    globally.
+    ``class_name`` matches *receiver* (or the type-inferred class name).
+    Searches same-file first, then globally.
     """
+    # Resolve receiver to class name via type table
+    resolved_receiver = receiver
+    if type_table:
+        file_types = type_table.get(file_path, {})
+        resolved_receiver = file_types.get(receiver, receiver)
+
     same_file_match: str | None = None
     global_match: str | None = None
 
@@ -310,7 +434,7 @@ def _resolve_receiver_method(
         if (
             node is not None
             and node.label == NodeLabel.METHOD
-            and node.class_name == receiver
+            and node.class_name == resolved_receiver
         ):
             if node.file_path == file_path:
                 same_file_match = nid
@@ -332,11 +456,34 @@ def _resolve_receiver_method(
     return None
 
 
+def _build_type_table(
+    parse_data: list[FileParseData],
+    graph: KnowledgeGraph,
+) -> dict[str, dict[str, str]]:
+    """Build per-file ``{variable_name: class_name}`` from annotations and constructors."""
+    class_names = {node.name for node in graph.get_nodes_by_label(NodeLabel.CLASS)}
+    table: dict[str, dict[str, str]] = {}
+    for fpd in parse_data:
+        file_table: dict[str, str] = {}
+        for tref in fpd.parse_result.type_refs:
+            if tref.kind == "variable" and tref.variable_name:
+                file_table.setdefault(tref.variable_name, tref.name)
+            elif tref.kind == "param" and tref.param_name:
+                file_table.setdefault(tref.param_name, tref.name)
+        for call in fpd.parse_result.calls:
+            if call.assignment_target and call.name in class_names and not call.receiver:
+                file_table.setdefault(call.assignment_target, call.name)
+        if file_table:
+            table[fpd.file_path] = file_table
+    return table
+
+
 def resolve_file_calls(
     fpd: FileParseData,
     call_index: dict[str, list[str]],
     file_sym_index: FileSymbolIndex,
     graph: KnowledgeGraph,
+    type_table: dict[str, dict[str, str]] | None = None,
 ) -> list[ResolvedEdge]:
     """Resolve all call expressions in a single file to ResolvedEdge objects.
 
@@ -351,17 +498,18 @@ def resolve_file_calls(
         if call.name in _CALL_BLOCKLIST and call.receiver not in ("self", "this"):
             continue
 
-        source_id = find_containing_symbol(
-            call.line, fpd.file_path, file_sym_index
-        )
+        source_id = find_containing_symbol(call.line, fpd.file_path, file_sym_index)
         if source_id is None:
-            logger.debug(
-                "No containing symbol for call %s at line %d in %s",
-                call.name,
-                call.line,
-                fpd.file_path,
-            )
-            continue
+            # Module-level call: attribute to the File node.
+            source_id = generate_id(NodeLabel.FILE, fpd.file_path)
+            if graph.get_node(source_id) is None:
+                logger.debug(
+                    "No containing symbol or file node for call %s at line %d in %s",
+                    call.name,
+                    call.line,
+                    fpd.file_path,
+                )
+                continue
 
         caller_class_name: str | None = None
         if call.receiver in ("self", "this"):
@@ -370,7 +518,10 @@ def resolve_file_calls(
                 caller_class_name = source_node.class_name
 
         target_id, confidence = resolve_call(
-            call, fpd.file_path, call_index, graph,
+            call,
+            fpd.file_path,
+            call_index,
+            graph,
             caller_class_name=caller_class_name,
             import_cache=import_cache,
         )
@@ -384,7 +535,10 @@ def resolve_file_calls(
                 continue
             arg_call = CallInfo(name=arg_name, line=call.line)
             arg_id, arg_conf = resolve_call(
-                arg_call, fpd.file_path, call_index, graph,
+                arg_call,
+                fpd.file_path,
+                call_index,
+                graph,
                 import_cache=import_cache,
             )
             if arg_id is not None:
@@ -396,7 +550,10 @@ def resolve_file_calls(
         if receiver and receiver not in ("self", "this"):
             receiver_call = CallInfo(name=receiver, line=call.line)
             recv_id, recv_conf = resolve_call(
-                receiver_call, fpd.file_path, call_index, graph,
+                receiver_call,
+                fpd.file_path,
+                call_index,
+                graph,
                 import_cache=import_cache,
             )
             if recv_id is not None:
@@ -405,8 +562,13 @@ def resolve_file_calls(
                     edges.append(edge)
 
             recv_method_edge = _resolve_receiver_method(
-                receiver, call.name, source_id, fpd.file_path,
-                call_index, graph,
+                receiver,
+                call.name,
+                source_id,
+                fpd.file_path,
+                call_index,
+                graph,
+                type_table=type_table,
             )
             if recv_method_edge is not None and recv_method_edge.rel_id not in seen:
                 seen.add(recv_method_edge.rel_id)
@@ -430,19 +592,47 @@ def resolve_file_calls(
             base_name = dec_name.rsplit(".", 1)[-1] if "." in dec_name else dec_name
             call_obj = CallInfo(name=base_name, line=symbol.start_line)
             target_id, confidence = resolve_call(
-                call_obj, fpd.file_path, call_index, graph,
+                call_obj,
+                fpd.file_path,
+                call_index,
+                graph,
                 import_cache=import_cache,
             )
             if target_id is None and "." in dec_name:
                 call_obj = CallInfo(name=dec_name, line=symbol.start_line)
                 target_id, confidence = resolve_call(
-                    call_obj, fpd.file_path, call_index, graph,
+                    call_obj,
+                    fpd.file_path,
+                    call_index,
+                    graph,
                     import_cache=import_cache,
                 )
             if target_id is not None:
                 edge = _make_edge(source_id, target_id, confidence, seen)
                 if edge is not None:
                     edges.append(edge)
+
+    # First-class function references (e.g. ``handler = my_func``).
+    for func_ref in fpd.parse_result.func_refs:
+        if func_ref.name in _CALL_BLOCKLIST:
+            continue
+        source_id = find_containing_symbol(func_ref.line, fpd.file_path, file_sym_index)
+        if source_id is None:
+            source_id = generate_id(NodeLabel.FILE, fpd.file_path)
+            if graph.get_node(source_id) is None:
+                continue
+        ref_call = CallInfo(name=func_ref.name, line=func_ref.line)
+        target_id, confidence = resolve_call(
+            ref_call,
+            fpd.file_path,
+            call_index,
+            graph,
+            import_cache=import_cache,
+        )
+        if target_id is not None:
+            edge = _make_edge(source_id, target_id, confidence * 0.7, seen)
+            if edge is not None:
+                edges.append(edge)
 
     return edges
 
@@ -478,18 +668,19 @@ def process_calls(
     """
     call_index = name_index if name_index is not None else build_name_index(graph, _CALLABLE_LABELS)
     file_sym_index = build_file_symbol_index(graph, _CALLABLE_LABELS)
+    type_table = _build_type_table(parse_data, graph)
 
     if parallel and len(parse_data) > 1:
         workers = min(os.cpu_count() or 4, 8, len(parse_data))
         with ThreadPoolExecutor(max_workers=workers) as pool:
             futures = [
-                pool.submit(resolve_file_calls, fpd, call_index, file_sym_index, graph)
+                pool.submit(resolve_file_calls, fpd, call_index, file_sym_index, graph, type_table)
                 for fpd in parse_data
             ]
             per_file_edges = [f.result() for f in futures]
     else:
         per_file_edges = [
-            resolve_file_calls(fpd, call_index, file_sym_index, graph)
+            resolve_file_calls(fpd, call_index, file_sym_index, graph, type_table)
             for fpd in parse_data
         ]
 
